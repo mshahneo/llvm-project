@@ -661,6 +661,17 @@ class IsVectorOfLengthPred<list<int> allowedLengths> :
                            == }]
                          # allowedlength>)>]>;
 
+// @mshahneo:Whether the number of elements of a vector is from the given
+// `allowedRanges` list, the list has two values, start and end of the range
+class IsVectorOfLengthRangePred<list<int> allowedRanges> :
+  And<[IsVectorTypePred,
+       And<[CPred<[{$_self.cast<::mlir::VectorType>().getNumElements()
+                           >= }]
+                         # allowedRanges[0]>, 
+                        CPred<[{$_self.cast<::mlir::VectorType>().getNumElements()
+                           <= }]
+                         # allowedRanges[1]>]>]>;
+
 // Whether the number of elements of a fixed-length vector is from the given
 // `allowedLengths` list
 class IsFixedVectorOfLengthPred<list<int> allowedLengths> :
@@ -686,6 +697,13 @@ class VectorOfLength<list<int> allowedLengths> : Type<
   " of length " # !interleave(allowedLengths, "/"),
   "::mlir::VectorType">;
 
+// @mshahneo: Any vector where the number of elements is from the given
+// `allowedRanges` list
+class VectorOfLengthRange<list<int> allowedRanges> : Type<
+  IsVectorOfLengthRangePred<allowedRanges>,
+  " of length " # !interleave(allowedRanges, "-"),
+  "::mlir::VectorType">;
+
 // Any fixed-length vector where the number of elements is from the given
 // `allowedLengths` list
 class FixedVectorOfLength<list<int> allowedLengths> : Type<
@@ -709,6 +727,18 @@ class VectorOfLengthAndType<list<int> allowedLengths,
        VectorOfLength<allowedLengths>.predicate]>,
   VectorOf<allowedTypes>.summary # VectorOfLength<allowedLengths>.summary,
   "::mlir::VectorType">;
+
+
+// @mshahneo: Any vector where the number of elements is from the given
+// `allowedRanges` list and the type is from the given `allowedTypes`
+// list
+class VectorOfLengthRangeAndType<list<int> allowedRanges,
+                            list<Type> allowedTypes> : Type<
+  And<[VectorOf<allowedTypes>.predicate,
+       VectorOfLengthRange<allowedRanges>.predicate]>,
+  VectorOf<allowedTypes>.summary # VectorOfLengthRange<allowedRanges>.summary,
+  "::mlir::VectorType">;
+
 
 // Any fixed-length vector where the number of elements is from the given
 // `allowedLengths` list and the type is from the given `allowedTypes` list

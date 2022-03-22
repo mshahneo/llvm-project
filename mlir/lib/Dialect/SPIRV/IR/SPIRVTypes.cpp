@@ -87,25 +87,29 @@ Optional<int64_t> ArrayType::getSizeInBytes() {
 //===----------------------------------------------------------------------===//
 
 bool CompositeType::classof(Type type) {
-  if (auto vectorType = type.dyn_cast<VectorType>())
-    return isValid(vectorType);
+  // if (auto vectorType = type.dyn_cast<VectorType>())
+  //   return isValid(vectorType);
   return type
       .isa<spirv::ArrayType, spirv::CooperativeMatrixNVType, spirv::MatrixType,
            spirv::RuntimeArrayType, spirv::StructType>();
 }
 
+// @mshahneo:Adding support for VectorAnyINTEL capability
+// accepts all vector size greater than 1
 bool CompositeType::isValid(VectorType type) {
-  switch (type.getNumElements()) {
-  case 2:
-  case 3:
-  case 4:
-  case 8:
-  case 16:
-    break;
-  default:
-    return false;
-  }
-  return type.getRank() == 1 && type.getElementType().isa<ScalarType>();
+  return type.getRank() == 1 && type.getElementType().isa<ScalarType>() &&
+         type.getNumElements() >= 2;
+  // switch (type.getNumElements()) {
+  // case 2:
+  // case 3:
+  // case 4:
+  // case 8:
+  // case 16:
+  //   break;
+  // default:
+  //   return false;
+  // }
+  // return type.getRank() == 1 && type.getElementType().isa<ScalarType>();
 }
 
 Type CompositeType::getElementType(unsigned index) const {
@@ -166,11 +170,25 @@ void CompositeType::getCapabilities(
           [&](auto type) { type.getCapabilities(capabilities, storage); })
       .Case<VectorType>([&](VectorType type) {
         auto vecSize = getNumElements();
-        if (vecSize == 8 || vecSize == 16) {
-          static const Capability caps[] = {Capability::Vector16};
-          ArrayRef<Capability> ref(caps, llvm::array_lengthof(caps));
+        llvm::SmallVector<Capability, 2> caps;
+        if (vecSize >= 2) {
+          caps.push_back(Capability::VectorAnyINTEL);
+          // static const Capability caps[] = {Capability::VectorAnyINTEL, Capability::Vector16};
+          if (vecSize == 8 || vecSize == 16) {
+            caps.push_back(Capability::Vector16);
+          }
+          ArrayRef<Capability> ref(caps);
           capabilities.push_back(ref);
         }
+        // if (vecSize == 8 || vecSize == 16) {
+        //   // static const Capability caps[] = {Capability::Vector16};
+        //   // ArrayRef<Capability> ref(caps, llvm::array_lengthof(caps));
+        //   capabilities.push_back(Capability::Vector16);
+        // }
+        // // @mshahneo: Add support for VectorAnyINTEL
+        // else if (vecSize >= 2) {
+        //   capabilities.push_back(Capability::VectorAnyINTEL);
+        // }
         return type.getElementType().cast<ScalarType>().getCapabilities(
             capabilities, storage);
       })

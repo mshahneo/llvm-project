@@ -3886,6 +3886,8 @@ def SPV_IsRTArrayType : CPred<"$_self.isa<::mlir::spirv::RuntimeArrayType>()">;
 def SPV_IsSampledImageType : CPred<"$_self.isa<::mlir::spirv::SampledImageType>()">;
 def SPV_IsStructType : CPred<"$_self.isa<::mlir::spirv::StructType>()">;
 
+// @mshahneo: removing the vector size restriction
+// def SPV_IsVectorType : CPred<"$_self.isa<::mlir::spirv::VectorType>()">;
 
 // See https://www.khronos.org/registry/spir-v/specs/unified1/SPIRV.html#_types
 // for the definition of the following types and type categories.
@@ -3897,8 +3899,12 @@ def SPV_Int32 : TypeAlias<I32, "Int32">;
 def SPV_Float32 : TypeAlias<F32, "Float32">;
 def SPV_Float : FloatOfWidths<[16, 32, 64]>;
 def SPV_Float16or32 : FloatOfWidths<[16, 32]>;
-def SPV_Vector : VectorOfLengthAndType<[2, 3, 4, 8, 16],
+// @mshaneo: remove the vector size restriction
+def SPV_Vector : VectorOfLengthRangeAndType<[2,2048],
                                        [SPV_Bool, SPV_Integer, SPV_Float]>;
+// @mshaneo: remove the vector size restriction
+// def SPV_Vector :  AnyTypeOf[SPV_Bool, SPV_Integer, SPV_Float]>
+
 // Component type check is done in the type parser for the following SPIR-V
 // dialect-specific types so we use "Any" here.
 def SPV_AnyPtr : DialectType<SPIRV_Dialect, SPV_IsPtrType,
@@ -3918,6 +3924,11 @@ def SPV_AnyStruct : DialectType<SPIRV_Dialect, SPV_IsStructType,
                                 "any SPIR-V struct type">;
 def SPV_AnySampledImage : DialectType<SPIRV_Dialect, SPV_IsSampledImageType,
                                 "any SPIR-V sampled image type">;
+
+// @mshaneo: remove the vector size restriction
+// def SPV_Vector :  DialectType<SPIRV_Dialect, SPV_IsVectorType,
+                                // "any SPIR-V Vector type">;
+
 
 def SPV_Numerical : AnyTypeOf<[SPV_Integer, SPV_Float]>;
 def SPV_Scalar : AnyTypeOf<[SPV_Numerical, SPV_Bool]>;
@@ -3939,12 +3950,24 @@ class SPV_CoopMatrixOfType<list<Type> allowedTypes> :
     "$_self.cast<::mlir::spirv::CooperativeMatrixNVType>().getElementType()",
     "Cooperative Matrix">;
 
-class SPV_ScalarOrVectorOf<Type type> :
-    AnyTypeOf<[type, VectorOfLengthAndType<[2, 3, 4, 8, 16], [type]>]>;
+// class SPV_ScalarOrVectorOf<Type type> :
+//     AnyTypeOf<[type, VectorOfLengthAndType<[2-2048], [type]>]>;
 
+// @mshahneo: Allow ranges (start, end) to be passed for vector length constraint 
+class SPV_ScalarOrVectorOf<Type type> :
+    AnyTypeOf<[type, VectorOfLengthRangeAndType<[2,2048], [type]>]>;
+
+
+// class SPV_ScalarOrVectorOrCoopMatrixOf<Type type> :
+//     AnyTypeOf<[type, VectorOfLengthAndType<[2-2048], [type]>,
+//                SPV_CoopMatrixOfType<[type]>]>;
+
+// @mshahneo: Allow ranges (start, end) to be passed for vector length constraint 
 class SPV_ScalarOrVectorOrCoopMatrixOf<Type type> :
-    AnyTypeOf<[type, VectorOfLengthAndType<[2, 3, 4, 8, 16], [type]>,
+    AnyTypeOf<[type, VectorOfLengthRangeAndType<[2,2048], [type]>,
                SPV_CoopMatrixOfType<[type]>]>;
+
+
 
 def SPV_ScalarOrVector : AnyTypeOf<[SPV_Scalar, SPV_Vector]>;
 def SPV_ScalarOrVectorOrPtr : AnyTypeOf<[SPV_ScalarOrVector, SPV_AnyPtr]>;
