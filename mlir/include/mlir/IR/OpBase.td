@@ -722,6 +722,8 @@ class FixedVectorOfLengthAndType<list<int> allowedLengths,
 
 // Any scalable vector where the number of elements is from the given
 // `allowedLengths` list and the type is from the given `allowedTypes` list
+
+
 class ScalableVectorOfLengthAndType<list<int> allowedLengths,
                                     list<Type> allowedTypes> : Type<
   And<[ScalableVectorOf<allowedTypes>.predicate,
@@ -729,6 +731,95 @@ class ScalableVectorOfLengthAndType<list<int> allowedLengths,
   ScalableVectorOf<allowedTypes>.summary #
   ScalableVectorOfLength<allowedLengths>.summary,
   "::mlir::VectorType">;
+
+// Whether the number of elements of a vector is from the given
+// `allowedRanges` list, the list has two values, start and end of the range (inclusive)
+class IsVectorOfLengthRangePred<list<int> allowedRanges> :
+  And<[IsVectorTypePred,
+       And<[CPred<[{$_self.cast<::mlir::VectorType>().getNumElements()
+                           >= }]
+                         # allowedRanges[0]>, 
+                        CPred<[{$_self.cast<::mlir::VectorType>().getNumElements()
+                           <= }]
+                         # allowedRanges[1]>]>]>;
+
+// Whether the number of elements of a fixed-length vector is from the given
+// `allowedRanges` list, the list has two values, start and end of the range (inclusive)
+class IsFixedVectorOfLengthRangePred<list<int> allowedRanges> :
+  And<[IsFixedVectorTypePred,
+       And<[CPred<[{$_self.cast<::mlir::VectorType>().getNumElements()
+                           >= }]
+                         # allowedRanges[0]>, 
+                        CPred<[{$_self.cast<::mlir::VectorType>().getNumElements()
+                           <= }]
+                         # allowedRanges[1]>]>]>;
+
+// Whether the number of elements of a scalable vector is from the given
+// `allowedRanges` list, the list has two values, start and end of the range (inclusive)
+class IsScalableVectorOfLengthRangePred<list<int> allowedRanges> :
+  And<[IsScalableVectorTypePred,
+       And<[CPred<[{$_self.cast<::mlir::VectorType>().getNumElements()
+                           >= }]
+                         # allowedRanges[0]>, 
+                        CPred<[{$_self.cast<::mlir::VectorType>().getNumElements()
+                           <= }]
+                         # allowedRanges[1]>]>]>;
+
+// Any vector where the number of elements is from the given
+// `allowedRanges` list
+class VectorOfLengthRange<list<int> allowedRanges> : Type<
+  IsVectorOfLengthRangePred<allowedRanges>,
+  " of length " # !interleave(allowedRanges, "-"),
+  "::mlir::VectorType">;
+
+
+// Any fixed-length vector where the number of elements is from the given
+// `allowedLengths` list
+class FixedVectorOfLengthRange<list<int> allowedRanges> : Type<
+  IsFixedVectorOfLengthRangePred<allowedRanges>,
+  " of length " # !interleave(allowedRanges, "-"),
+  "::mlir::VectorType">;
+
+// Any scalable vector where the number of elements is from the given
+// `allowedLengths` list
+class ScalableVectorOfLengthRange<list<int> allowedRanges> : Type<
+  IsScalableVectorOfLengthRangePred<allowedRanges>,
+  " of length " # !interleave(allowedRanges, "-"),
+  "::mlir::VectorType">;
+
+// Any vector where the number of elements is from the given
+// `allowedRanges` list and the type is from the given `allowedTypes`
+// list
+class VectorOfLengthRangeAndType<list<int> allowedRanges,
+                            list<Type> allowedTypes> : Type<
+  And<[VectorOf<allowedTypes>.predicate,
+       VectorOfLengthRange<allowedRanges>.predicate]>,
+  VectorOf<allowedTypes>.summary # VectorOfLengthRange<allowedRanges>.summary,
+  "::mlir::VectorType">;
+
+// Any fixed-length vector where the number of elements is from the given
+// `allowedRanges` list and the type is from the given `allowedTypes`
+// list
+class FixedVectorOfLengthRangeAndType<list<int> allowedRanges,
+                                    list<Type> allowedTypes> : Type<
+  And<[FixedVectorOf<allowedTypes>.predicate,
+       FixedVectorOfLengthRange<allowedRanges>.predicate]>,
+  FixedVectorOf<allowedTypes>.summary #
+  FixedVectorOfLengthRange<allowedRanges>.summary,
+  "::mlir::VectorType">;
+
+// Any scalable vector where the number of elements is from the given
+// `allowedRanges` list and the type is from the given `allowedTypes`
+// list
+class ScalableVectorOfLengthRangeAndType<list<int> allowedRanges,
+                                    list<Type> allowedTypes> : Type<
+  And<[ScalableVectorOf<allowedTypes>.predicate,
+       ScalableVectorOfLengthRange<allowedRanges>.predicate]>,
+  ScalableVectorOf<allowedTypes>.summary #
+  ScalableVectorOfLengthRange<allowedRanges>.summary,
+  "::mlir::VectorType">;
+
+
 
 def AnyVector : VectorOf<[AnyType]>;
 // Temporary vector type clone that allows gradual transition to 0-D vectors.
@@ -1269,7 +1360,7 @@ def TypeAttr : TypeAttrBase<"::mlir::Type", "any type attribute"> {
 }
 
 class TypeAttrOf<Type ty>
-   : TypeAttrBase<ty.cppClassName, "type attribute of " # ty.description> {
+   : TypeAttrBase<ty.cppClassName, "type attribute of " # ty.summary> {
   let constBuilderCall = "::mlir::TypeAttr::get($0)";
 }
 
@@ -1941,6 +2032,11 @@ def AnyRegion : Region<CPred<"true">, "any region">;
 class SizedRegion<int numBlocks> : Region<
   CPred<"::llvm::hasNItems($_self, " # numBlocks # ")">,
   "region with " # numBlocks # " blocks">;
+
+// A region with at least the given number of blocks.
+class MinSizedRegion<int numBlocks> : Region<
+  CPred<"::llvm::hasNItemsOrMore($_self, " # numBlocks # ")">,
+  "region with at least " # numBlocks # " blocks">;
 
 // A variadic region constraint. It expands to zero or more of the base region.
 class VariadicRegion<Region region>

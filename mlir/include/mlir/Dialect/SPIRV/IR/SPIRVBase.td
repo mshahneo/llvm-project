@@ -3897,8 +3897,10 @@ def SPV_Int32 : TypeAlias<I32, "Int32">;
 def SPV_Float32 : TypeAlias<F32, "Float32">;
 def SPV_Float : FloatOfWidths<[16, 32, 64]>;
 def SPV_Float16or32 : FloatOfWidths<[16, 32]>;
-def SPV_Vector : VectorOfLengthAndType<[2, 3, 4, 8, 16],
+// remove the vector size restriction
+def SPV_Vector : VectorOfLengthRangeAndType<[2,18446744073709551615],
                                        [SPV_Bool, SPV_Integer, SPV_Float]>;
+
 // Component type check is done in the type parser for the following SPIR-V
 // dialect-specific types so we use "Any" here.
 def SPV_AnyPtr : DialectType<SPIRV_Dialect, SPV_IsPtrType,
@@ -3939,11 +3941,13 @@ class SPV_CoopMatrixOfType<list<Type> allowedTypes> :
     "$_self.cast<::mlir::spirv::CooperativeMatrixNVType>().getElementType()",
     "Cooperative Matrix">;
 
+// Allow ranges (start, end) is passed for vector length constraint
 class SPV_ScalarOrVectorOf<Type type> :
-    AnyTypeOf<[type, VectorOfLengthAndType<[2, 3, 4, 8, 16], [type]>]>;
+    AnyTypeOf<[type, VectorOfLengthRangeAndType<[2,18446744073709551615], [type]>]>;
 
+// Allow ranges (start, end) is passed for vector length constraint
 class SPV_ScalarOrVectorOrCoopMatrixOf<Type type> :
-    AnyTypeOf<[type, VectorOfLengthAndType<[2, 3, 4, 8, 16], [type]>,
+   AnyTypeOf<[type, VectorOfLengthRangeAndType<[2,18446744073709551615], [type]>,
                SPV_CoopMatrixOfType<[type]>]>;
 
 def SPV_ScalarOrVector : AnyTypeOf<[SPV_Scalar, SPV_Vector]>;

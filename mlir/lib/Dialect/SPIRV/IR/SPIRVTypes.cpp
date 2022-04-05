@@ -94,19 +94,13 @@ bool CompositeType::classof(Type type) {
            spirv::RuntimeArrayType, spirv::StructType>();
 }
 
+// Support for VectorAnyINTEL capability
+// accepts all vector size between 2 - (2^64 -1) [inclusive range]
 bool CompositeType::isValid(VectorType type) {
-  switch (type.getNumElements()) {
-  case 2:
-  case 3:
-  case 4:
-  case 8:
-  case 16:
-    break;
-  default:
-    return false;
-  }
-  return type.getRank() == 1 && type.getElementType().isa<ScalarType>();
+  return type.getRank() == 1 && type.getElementType().isa<ScalarType>() &&
+         type.getNumElements() >= 2 && type.getNumElements() <= 18446744073709551615UL;
 }
+
 
 Type CompositeType::getElementType(unsigned index) const {
   return TypeSwitch<Type, Type>(*this)
@@ -166,9 +160,13 @@ void CompositeType::getCapabilities(
           [&](auto type) { type.getCapabilities(capabilities, storage); })
       .Case<VectorType>([&](VectorType type) {
         auto vecSize = getNumElements();
-        if (vecSize == 8 || vecSize == 16) {
-          static const Capability caps[] = {Capability::Vector16};
-          ArrayRef<Capability> ref(caps, llvm::array_lengthof(caps));
+        llvm::SmallVector<Capability, 2> caps;
+        if (vecSize >= 2) {
+          caps.push_back(Capability::VectorAnyINTEL);
+          if (vecSize == 8 || vecSize == 16) {
+            caps.push_back(Capability::Vector16);
+          }
+          ArrayRef<Capability> ref(caps);
           capabilities.push_back(ref);
         }
         return type.getElementType().cast<ScalarType>().getCapabilities(
