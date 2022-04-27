@@ -2236,8 +2236,14 @@ ParseResult spirv::FuncOp::parse(OpAsmParser &parser, OperationState &state) {
 
   // Parse the optional function body.
   auto *body = state.addRegion();
+
+  // @mshahneo: Is the Argument list populated only if there is function body?? 
+  // We may have to add an  Block *addEntryBlock():/home/mshahneo/l0-runner/llvm-project/build/tools/mlir/include/mlir/IR/FunctionOpInterfaces.h.inc:578
+  
   OptionalParseResult result = parser.parseOptionalRegion(
       *body, entryArgs, entryArgs.empty() ? ArrayRef<Type>() : argTypes);
+  if(result.hasValue() && failed(*result))
+    llvm::errs() << nameAttr.strref() << ": No args \n";
   return failure(result.hasValue() && failed(*result));
 }
 
@@ -3219,7 +3225,21 @@ LogicalResult spirv::ModuleOp::verify() {
       }
       entryPoints[key] = entryPointOp;
     } else if (auto funcOp = dyn_cast<spirv::FuncOp>(op)) {
-      if (funcOp.isExternal())
+      
+      for(int i=0; i<funcOp->getAttrs().size() ; i++) {
+        if(isa<NamedAttribute>(funcOp->getAttrs()[i])) {
+          llvm::errs() << "Named Attribute \n";
+          llvm::errs() << funcOp->getAttrs()[i].getName().strref() << "\n" << funcOp->getAttrs()[i].getValue() << "\n";
+          auto tmpStr = funcOp->getAttrs()[i].getName().strref().str();
+          llvm::errs() << tmpStr << "\n";
+          // llvm::errs() << funcOp->getAttrs()[i].getValue().first() << ": " << funcOp->getAttrs()[i].getValue()<< "\n";
+        }
+      }
+      
+      // @mshahneo:
+      // If the function is external and does not have LinkageAttributes
+      // throw an error 
+      if (funcOp.isExternal() && !funcOp->getAttr("LinkageAttributes"))
         return op.emitError("'spv.module' cannot contain external functions");
 
       // TODO: move this check to spv.func.
