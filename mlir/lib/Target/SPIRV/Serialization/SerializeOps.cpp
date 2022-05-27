@@ -181,6 +181,8 @@ LogicalResult Serializer::processFuncOp(spirv::FuncOp op) {
   assert(functionHeader.empty() && functionBody.empty());
 
   uint32_t fnTypeID = 0;
+  // Used this flag to maintain the state if a function is external
+  bool isExternalFunc = false; 
   // Generate type of the function.
   if (failed(processType(op.getLoc(), op.getType(), fnTypeID)))
     return failure();
@@ -219,26 +221,40 @@ LogicalResult Serializer::processFuncOp(spirv::FuncOp op) {
       // This is to generate OpFunctionParameter for functions with LinkageAttributes
       // WARNING: This operation has side-effect, it essentially adds a body to the func
       // Hence, making it not external anymore (isExternal() is going to return false for
-      // this function from now on) 
-      auto *entryBlock = op.addEntryBlock();
-      llvm::errs() << "[fn] entry block: " << entryBlock << "\n";
-      llvm::errs() << "[fn] number of arguments: " << op.getNumArguments() << "\n";
-      // Declare the parameters.
+      // this function from now on)
+      // Hence, we'll be relying on the isExternalFunc flag for the rest of this function 
+      // to check if the function is external or not 
+      auto entryBlock = op.addEntryBlock();
+      // auto newBlock = op.addBlock();
+      isExternalFunc = true;
+
+      // @mshahneo: Test, using the block generated directly, instead of getting it from 
+      // the definition
+      // ==========================================
       for (auto arg : op.getArguments()) {
         uint32_t argTypeID = 0;
         if (failed(processType(op.getLoc(), arg.getType(), argTypeID))) {
           return failure();
-        }
-        auto argValueID = getNextID();
-        valueIDMap[arg] = argValueID;
-        encodeInstructionInto(functionHeader, spirv::Opcode::OpFunctionParameter,
-                          {argTypeID, argValueID});
       }
+      auto argValueID = getNextID();
+      valueIDMap[arg] = argValueID;
+      encodeInstructionInto(functionHeader, spirv::Opcode::OpFunctionParameter,
+                        {argTypeID, argValueID});
+      }
+      // @mshahneo: we don't need to process the added block, since, we know there is nothing
+      // to process, we added the fake body just to get the arguments
+      // if (failed(processBlock(entryBlock, /*omitLabel=*/true)))
+      //   return failure();
+      // @mshahneo:  Now remove the body, since it's use is done
+      op.eraseBody();
+      
+      // ========================================== 
+      
+      // llvm::errs() << "[fn] entry block: " << entryBlock << "\n";
     }
     else
       return op.emitError("external function without LinkageAttributes is unhandled");
   }
-  // Process the body.  
   else {
     // Declare the parameters.
     for (auto arg : op.getArguments()) {
@@ -249,15 +265,24 @@ LogicalResult Serializer::processFuncOp(spirv::FuncOp op) {
       auto argValueID = getNextID();
       valueIDMap[arg] = argValueID;
       encodeInstructionInto(functionHeader, spirv::Opcode::OpFunctionParameter,
-                            {argTypeID, argValueID});
+                        {argTypeID, argValueID});
     }
     // Some instructions (e.g., OpVariable) in a function must be in the first
     // block in the function. These instructions will be put in functionHeader.
     // Thus, we put the label in functionHeader first, and omit it from the first
     // block.
+    // @mshahneo: OpLabel only needs to be added for functions with body 
+    // (including empty body)
+    
+    // Since, we added a fake body for functions with Import Linkage attributes,
+    // These functions are essentially function delcaration, so they should not 
+    // have OpLabel and a terminating instruction
+    
+    // @mshahneo: We may need to process the entry block
+    // if(!isExternalFunc)
     encodeInstructionInto(functionHeader, spirv::Opcode::OpLabel,
                           {getOrCreateBlockID(&op.front())});
-    // @mshahneo: We may need to process the entry block
+    
     if (failed(processBlock(&op.front(), /*omitLabel=*/true)))
       return failure();
     if (failed(visitInPrettyBlockOrder(
@@ -265,12 +290,6 @@ LogicalResult Serializer::processFuncOp(spirv::FuncOp op) {
             /*skipHeader=*/true))) {
       return failure();
     }
-    else {
-      // Just handle the entry block
-      if (failed(processBlock(&op.front(), /*omitLabel=*/true)))
-        return failure();
-    }
-
     // There might be OpPhi instructions who have value references needing to fix.
     for (const auto &deferredValue : deferredPhiValues) {
       Value value = deferredValue.first;
@@ -282,10 +301,29 @@ LogicalResult Serializer::processFuncOp(spirv::FuncOp op) {
         functionBody[offset] = id;
     }
     deferredPhiValues.clear();
-
-    LLVM_DEBUG(llvm::dbgs() << "-- completed function '" << op.getName()
-                            << "' --\n");
   }
+
+  // if(isExternalFunc)
+  //   llvm::errs() << "External function \n";
+
+  // llvm::errs() << "[fn] number of arguments: " << op.getNumArguments() << "\n";
+  
+  
+  // if(!isExternalFunc)
+  //   encodeInstructionInto(functionHeader, spirv::Opcode::OpLabel,
+  //                       {getOrCreateBlockID(&op.front())});
+  
+  // else {
+  //   // Just handle the entry block
+  //   if (failed(processBlock(&op.front(), /*omitLabel=*/true)))
+  //     return failure();
+  // }
+
+  
+
+  LLVM_DEBUG(llvm::dbgs() << "-- completed function '" << op.getName()
+                          << "' --\n");
+
 
   // Insert Decorations based on Function Attributes
   // Implementation idea 1: using elided attributes approach
