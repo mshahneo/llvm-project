@@ -179,6 +179,8 @@ LogicalResult Serializer::processFuncOp(spirv::FuncOp op) {
   assert(functionHeader.empty() && functionBody.empty());
 
   uint32_t fnTypeID = 0;
+  // Used this flag to maintain the state if a function is external
+  bool isExternalFunc = false; 
   // Generate type of the function.
   if (failed(processType(op.getLoc(), op.getType(), fnTypeID)))
     return failure();
@@ -207,51 +209,164 @@ LogicalResult Serializer::processFuncOp(spirv::FuncOp op) {
     return failure();
   }
 
-  // Declare the parameters.
-  for (auto arg : op.getArguments()) {
-    uint32_t argTypeID = 0;
-    if (failed(processType(op.getLoc(), arg.getType(), argTypeID))) {
+  // @mshahneo:
+  // We can't use isExternal() to check for functions with LinkageAttributes
+  // Once we add an entryblock[shadow] for the outside functions
+  if (op.isExternal()) {
+    if(op->getAttr("LinkageAttributes")) {
+      // @mshahneo: Add an entry block to set up the block arguments
+      // to match the signature of the function.
+      // This is to generate OpFunctionParameter for functions with LinkageAttributes
+      // WARNING: This operation has side-effect, it essentially adds a body to the func
+      // Hence, making it not external anymore (isExternal() is going to return false for
+      // this function from now on)
+      // Hence, we'll be relying on the isExternalFunc flag for the rest of this function 
+      // to check if the function is external or not 
+      auto entryBlock = op.addEntryBlock();
+      // auto newBlock = op.addBlock();
+      isExternalFunc = true;
+
+      // @mshahneo: Test, using the block generated directly, instead of getting it from 
+      // the definition
+      // ==========================================
+      for (auto arg : op.getArguments()) {
+        uint32_t argTypeID = 0;
+        if (failed(processType(op.getLoc(), arg.getType(), argTypeID))) {
+          return failure();
+      }
+      auto argValueID = getNextID();
+      valueIDMap[arg] = argValueID;
+      encodeInstructionInto(functionHeader, spirv::Opcode::OpFunctionParameter,
+                        {argTypeID, argValueID});
+      }
+      // @mshahneo: we don't need to process the added block, since, we know there is nothing
+      // to process, we added the fake body just to get the arguments
+      // if (failed(processBlock(entryBlock, /*omitLabel=*/true)))
+      //   return failure();
+      // @mshahneo:  Now remove the body, since it's use is done
+      op.eraseBody();
+      
+      // ========================================== 
+      
+      // llvm::errs() << "[fn] entry block: " << entryBlock << "\n";
+    }
+    else
+      return op.emitError("external function without LinkageAttributes is unhandled");
+  }
+  else {
+    // Declare the parameters.
+    for (auto arg : op.getArguments()) {
+      uint32_t argTypeID = 0;
+      if (failed(processType(op.getLoc(), arg.getType(), argTypeID))) {
+        return failure();
+      }
+      auto argValueID = getNextID();
+      valueIDMap[arg] = argValueID;
+      encodeInstructionInto(functionHeader, spirv::Opcode::OpFunctionParameter,
+                        {argTypeID, argValueID});
+    }
+    // Some instructions (e.g., OpVariable) in a function must be in the first
+    // block in the function. These instructions will be put in functionHeader.
+    // Thus, we put the label in functionHeader first, and omit it from the first
+    // block.
+    // @mshahneo: OpLabel only needs to be added for functions with body 
+    // (including empty body)
+    
+    // Since, we added a fake body for functions with Import Linkage attributes,
+    // These functions are essentially function delcaration, so they should not 
+    // have OpLabel and a terminating instruction
+    
+    // @mshahneo: We may need to process the entry block
+    // if(!isExternalFunc)
+    encodeInstructionInto(functionHeader, spirv::Opcode::OpLabel,
+                          {getOrCreateBlockID(&op.front())});
+    
+    if (failed(processBlock(&op.front(), /*omitLabel=*/true)))
+      return failure();
+    if (failed(visitInPrettyBlockOrder(
+            &op.front(), [&](Block *block) { return processBlock(block); },
+            /*skipHeader=*/true))) {
       return failure();
     }
-    auto argValueID = getNextID();
-    valueIDMap[arg] = argValueID;
-    encodeInstructionInto(functionHeader, spirv::Opcode::OpFunctionParameter,
-                          {argTypeID, argValueID});
+    // There might be OpPhi instructions who have value references needing to fix.
+    for (const auto &deferredValue : deferredPhiValues) {
+      Value value = deferredValue.first;
+      uint32_t id = getValueID(value);
+      LLVM_DEBUG(llvm::dbgs() << "[phi] fix reference of value " << value
+                              << " to id = " << id << '\n');
+      assert(id && "OpPhi references undefined value!");
+      for (size_t offset : deferredValue.second)
+        functionBody[offset] = id;
+    }
+    deferredPhiValues.clear();
   }
 
-  // Process the body.
-  if (op.isExternal()) {
-    return op.emitError("external function is unhandled");
-  }
+  // if(isExternalFunc)
+  //   llvm::errs() << "External function \n";
 
-  // Some instructions (e.g., OpVariable) in a function must be in the first
-  // block in the function. These instructions will be put in functionHeader.
-  // Thus, we put the label in functionHeader first, and omit it from the first
-  // block.
-  encodeInstructionInto(functionHeader, spirv::Opcode::OpLabel,
-                        {getOrCreateBlockID(&op.front())});
-  if (failed(processBlock(&op.front(), /*omitLabel=*/true)))
-    return failure();
-  if (failed(visitInPrettyBlockOrder(
-          &op.front(), [&](Block *block) { return processBlock(block); },
-          /*skipHeader=*/true))) {
-    return failure();
-  }
+  // llvm::errs() << "[fn] number of arguments: " << op.getNumArguments() << "\n";
+  
+  
+  // if(!isExternalFunc)
+  //   encodeInstructionInto(functionHeader, spirv::Opcode::OpLabel,
+  //                       {getOrCreateBlockID(&op.front())});
+  
+  // else {
+  //   // Just handle the entry block
+  //   if (failed(processBlock(&op.front(), /*omitLabel=*/true)))
+  //     return failure();
+  // }
 
-  // There might be OpPhi instructions who have value references needing to fix.
-  for (const auto &deferredValue : deferredPhiValues) {
-    Value value = deferredValue.first;
-    uint32_t id = getValueID(value);
-    LLVM_DEBUG(llvm::dbgs() << "[phi] fix reference of value " << value
-                            << " to id = " << id << '\n');
-    assert(id && "OpPhi references undefined value!");
-    for (size_t offset : deferredValue.second)
-      functionBody[offset] = id;
-  }
-  deferredPhiValues.clear();
+  
 
   LLVM_DEBUG(llvm::dbgs() << "-- completed function '" << op.getName()
                           << "' --\n");
+
+
+  // Insert Decorations based on Function Attributes
+  // Implementation idea 1: using elided attributes approach
+
+  // SmallVector<StringRef, 2> elidedAttrs = {
+  //     ::mlir::SymbolTable::getSymbolAttrName(), 
+  //     ::mlir::function_interface_impl::getTypeAttrName(),
+  //     ::mlir::function_interface_impl::getArgDictAttrName(), 
+  //     ::mlir::function_interface_impl::getResultDictAttrName(), 
+  //     ::spirv::attributeName<spirv::FunctionControl>()};
+
+  // for (auto attr : op->getAttrs()) {
+  //   // @mshahneo: Test print
+  //   llvm::errs() << attr.getName().strref() << "\n" << attr.getValue() << "\n";
+  //   if (llvm::any_of(elidedAttrs, [&](StringRef elided) {
+  //         return attr.getName() == elided;
+  //       })) {
+  //     continue;
+  //   }
+  //   if (failed(processDecoration(op.getLoc(), funcID, attr))) {
+  //     return failure();
+  //   }
+  // }
+
+  // Only attributes I should be considering for decoration are the 
+  // ::mlir::spirv::Decoration attributes
+
+  for (auto attr : op->getAttrs()) {
+    // @mshahneo: Test print
+    // llvm::errs() << attr.getName().strref() << "\n" << attr.getValue() << "\n";
+    // Only generate OpDecorate op for spirv::Decoration attributes 
+    if (mlir::spirv::symbolizeEnum<spirv::Decoration>(attr.getName().strref()) != llvm::None) {
+      if (failed(processDecoration(op.getLoc(), funcID, attr))) {
+        return failure();
+      }
+    }
+    // if (llvm::any_of(::spirv::attributeName<spirv::Decoration>(), [&](spirv::Decoration decoration) {
+    //       return ::mlir::spirv::symbolizeEnum<spirv::Decoration>(attr.getName().strref()) == decoration;
+    //     })) {
+    //   if (failed(processDecoration(op.getLoc(), funcID, attr))) {
+    //     return failure();
+    //   }
+    // }    
+  }
+
   // Insert OpFunctionEnd.
   encodeInstructionInto(functionBody, spirv::Opcode::OpFunctionEnd, {});
 
@@ -260,6 +375,49 @@ LogicalResult Serializer::processFuncOp(spirv::FuncOp op) {
   functionHeader.clear();
   functionBody.clear();
 
+  return success();
+}
+
+LogicalResult Serializer::processVariableOp(spirv::VariableOp op) {
+  SmallVector<uint32_t, 4> operands;
+  SmallVector<StringRef, 2> elidedAttrs;
+  uint32_t resultID = 0;
+  uint32_t resultTypeID = 0;
+  if (failed(processType(op.getLoc(), op.getType(), resultTypeID))) {
+    return failure();
+  }
+  operands.push_back(resultTypeID);
+  resultID = getNextID();
+  valueIDMap[op.getResult()] = resultID;
+  operands.push_back(resultID);
+  auto attr = op->getAttr(spirv::attributeName<spirv::StorageClass>());
+  if (attr) {
+    operands.push_back(static_cast<uint32_t>(
+        attr.cast<IntegerAttr>().getValue().getZExtValue()));
+  }
+  elidedAttrs.push_back(spirv::attributeName<spirv::StorageClass>());
+  for (auto arg : op.getODSOperands(0)) {
+    auto argID = getValueID(arg);
+    if (!argID) {
+      return emitError(op.getLoc(), "operand 0 has a use before def");
+    }
+    operands.push_back(argID);
+  }
+  if (failed(emitDebugLine(functionHeader, op.getLoc())))
+    return failure();
+  encodeInstructionInto(functionHeader, spirv::Opcode::OpVariable, operands);
+  for (auto attr : op->getAttrs()) {
+    // @mshahneo: Test print
+    llvm::errs() << attr.getName().strref() << "\n" << attr.getValue() << "\n";
+    if (llvm::any_of(elidedAttrs, [&](StringRef elided) {
+          return attr.getName() == elided;
+        })) {
+      continue;
+    }
+    if (failed(processDecoration(op.getLoc(), resultID, attr))) {
+      return failure();
+    }
+  }
   return success();
 }
 

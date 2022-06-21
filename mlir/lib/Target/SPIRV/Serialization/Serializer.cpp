@@ -212,6 +212,86 @@ LogicalResult Serializer::processDecoration(Location loc, uint32_t resultID,
   SmallVector<uint32_t, 1> args;
   switch (decoration.getValue()) {
   case spirv::Decoration::Binding:
+  case spirv::Decoration::LinkageAttributes:
+  {
+    // @mshahneo: Test print
+    // This is an ArrayAttr, meaning it has two values: comma separated within '[]'
+    llvm::errs() << "Serializer: 251" << attrName << ":" << decorationName << ":" << attr.getValue() << ":" << attr.getValue().getType() << ":" << "\n";//attr.getValue()->first "\n";
+    // Get the value of the Linkage Attributes
+    // e.g., LinkageAttributes=["name", "LinkageType"]
+    // TODO: check to if attribute values are passed in the following format LinkageAttributes=["name", "LinkageType"]
+    // At this point we assume, they are passed in this format
+    auto arrayAttrVal = attr.getValue().dyn_cast<ArrayAttr>();
+    if(arrayAttrVal.size() != 2)
+      return emitError(loc, "attribute must have 2 values ") << attrName;
+    // Handle the attribute values, we expect values of type: 
+    // StringAttr (String name) and
+    // StringAttr (String LinkageType)
+    // Encode the Linkage Name (string literal to uint32_t)
+    spirv::encodeStringLiteralInto(args, arrayAttrVal[0].dyn_cast<StringAttr>().strref());
+    // Encode LinkageType
+    // Add the Linkagetype to the args
+    auto linkageType = static_cast<uint32_t>(spirv::symbolizeEnum<spirv::LinkageType>(arrayAttrVal[1].dyn_cast<StringAttr>().strref()).getValue());
+    // auto linkageType = static_cast<uint32_t>(spirv::symbolizeEnum<spirv::LinkageType>(arrayAttrVal[1]).getValue());
+    llvm::errs() << "Linkage type: " << linkageType << "\n";
+    args.push_back(linkageType);
+    break;
+    // for(auto& val:arrayAttrVal) {
+    //   llvm::errs() << "Attribute value: " << val << " Attribute Type: " << val.getType() << "\n"; 
+    //   // If string attribute
+    //   auto strAttr = val.dyn_cast<StringAttr>();
+
+    //   // strAttr.strref().
+
+
+    //   llvm::errs() << "String Attribute value: " << strAttr.strref() << "\n"; 
+    //   if(val.isa_and_nonnull<StringAttr>())
+    //     // Encode the Linkage Name (string literal to uint32_t)
+    //     spirv::encodeStringLiteralInto(args, val.dyn_cast<StringAttr>().strref());
+    //   // else if(val.isa_and_nonnull<IntegerAttr>()) {
+    //   //   // Add the Linkagetype to the args
+    //   //   auto linkageType = val.dyn_cast<UnitAttr>().;
+
+    //   //   // auto linkageType = static_cast<uint32_t>(spirv::symbolizeEnum<spirv::LinkageType>(attrVals[0]).getValue());
+
+    //   //   llvm::errs() << "Linkage type: " << linkageType << "\n";
+    //   //   args.push_back(linkageType);
+    //   // }
+    //   else
+    //     return emitError(loc, "Unhandled Attribute value type ") << attrName; 
+    //     // emitError("Unhandled Attribute value type")      
+    // }
+
+    // Now parse it
+    // (Token::l_brace).getStringValue())
+    // Remove the curly braces from front and back
+    // if(strAttr.consume_front("{") && strAttr.consume_back("}")) {
+    //   // Now Split the two args 
+    //   llvm::SmallVector<StringRef, 2> attrVals;
+    //   strAttr.split(attrVals, ',');
+    //   // Only expect 2 attributes
+    //   assert((attrVals.size() == 2) && "wrong number of attribute values ");
+    //   if(attrVals.size() == 2) {
+    //     // emitDecoration(resultID, decoration.getValue(), {val})
+    //     // SmallVectorImpl<StringRef> 
+
+    //     // Encode the Linkage Name (string literal to uint32_t)
+    //     spirv::encodeStringLiteralInto(args, attrVals[1]);
+
+    //     // Add the Linkagetype to the args
+    //     auto linkageType = static_cast<uint32_t>(spirv::symbolizeEnum<spirv::LinkageType>(attrVals[0]).getValue());
+    //     llvm::errs() << "Linkage type: " << linkageType << "\n";
+    //     args.push_back(linkageType);
+
+    //     // SmallVector<uint32_t, 4> nameOperands;
+    //     // nameOperands.push_back(resultID);
+    //     // spirv::encodeStringLiteralInto(nameOperands, name);
+    //     break;
+    //   }
+    //   // return emitError(loc, "attribute must have 2 values ") << attrName;
+    // }
+    // return emitError(loc, "attribute value should be within braces for ") << attrName; 
+  }   
   case spirv::Decoration::DescriptorSet:
   case spirv::Decoration::Location:
     if (auto intAttr = attr.getValue().dyn_cast<IntegerAttr>()) {
@@ -236,6 +316,9 @@ LogicalResult Serializer::processDecoration(Location loc, uint32_t resultID,
   case spirv::Decoration::NonWritable:
   case spirv::Decoration::NoPerspective:
   case spirv::Decoration::Restrict:
+  case spirv::Decoration::VectorComputeVariableINTEL:
+  case spirv::Decoration::VectorComputeFunctionINTEL:
+  case spirv::Decoration::VectorComputeCallableFunctionINTEL:
   case spirv::Decoration::RelaxedPrecision:
     // For unit attributes, the args list has no values so we do nothing
     if (auto unitAttr = attr.getValue().dyn_cast<UnitAttr>())
