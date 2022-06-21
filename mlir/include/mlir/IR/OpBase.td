@@ -730,6 +730,49 @@ class ScalableVectorOfLengthAndType<list<int> allowedLengths,
   ScalableVectorOfLength<allowedLengths>.summary,
   "::mlir::VectorType">;
 
+
+
+// Whether the number of elements of a vector is from the given
+// `allowedRanges` list, the list has two values, start and end of the range (inclusive)
+class IsVectorOfLengthRangePred<list<int> allowedRanges> :
+  And<[IsVectorTypePred,
+       And<[CPred<[{$_self.cast<::mlir::VectorType>().getNumElements()
+                           >= }]
+                         # allowedRanges[0]>, 
+                        CPred<[{$_self.cast<::mlir::VectorType>().getNumElements()
+                           <= }]
+                         # allowedRanges[1]>]>]>;
+
+// Whether the number of elements of a fixed-length vector is from the given
+// `allowedRanges` list, the list has two values, start and end of the range (inclusive)
+class IsFixedVectorOfLengthRangePred<list<int> allowedRanges> :
+  And<[IsFixedVectorTypePred,
+       And<[CPred<[{$_self.cast<::mlir::VectorType>().getNumElements()
+                           >= }]
+                         # allowedRanges[0]>, 
+                        CPred<[{$_self.cast<::mlir::VectorType>().getNumElements()
+                           <= }]
+                         # allowedRanges[1]>]>]>;
+
+// Whether the number of elements of a scalable vector is from the given
+// `allowedRanges` list, the list has two values, start and end of the range (inclusive)
+class IsScalableVectorOfLengthRangePred<list<int> allowedRanges> :
+  And<[IsScalableVectorTypePred,
+       And<[CPred<[{$_self.cast<::mlir::VectorType>().getNumElements()
+                           >= }]
+                         # allowedRanges[0]>, 
+                        CPred<[{$_self.cast<::mlir::VectorType>().getNumElements()
+                           <= }]
+                         # allowedRanges[1]>]>]>;
+
+// Any vector where the number of elements is from the given
+// `allowedRanges` list
+class VectorOfLengthRange<list<int> allowedRanges> : Type<
+  IsVectorOfLengthRangePred<allowedRanges>,
+  " of length " # !interleave(allowedRanges, "-"),
+  "::mlir::VectorType">;
+
+
 def AnyVector : VectorOf<[AnyType]>;
 // Temporary vector type clone that allows gradual transition to 0-D vectors.
 def AnyVectorOfAnyRank : VectorOfAnyRankOf<[AnyType]>;
