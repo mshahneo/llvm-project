@@ -18,17 +18,16 @@ func.func @expvec(%arg0 : vector<3xf16>) -> () {
 
 // -----
 
+func.func @expanyvec(%arg0 : vector<5xf32>) -> () {
+  // CHECK: spv.CL.exp {{%.*}} : vector<5xf16>
+  %2 = spv.CL.exp %arg0 : vector<5xf32>
+  return
+}
+// -----
+
 func.func @exp(%arg0 : i32) -> () {
   // expected-error @+1 {{op operand #0 must be 16/32/64-bit float or vector of 16/32/64-bit float values}}
   %2 = spv.CL.exp %arg0 : i32
-  return
-}
-
-// -----
-
-func.func @exp(%arg0 : vector<5xf32>) -> () {
-  // expected-error @+1 {{op operand #0 must be 16/32/64-bit float or vector of 16/32/64-bit float values of length 2/3/4}}
-  %2 = spv.CL.exp %arg0 : vector<5xf32>
   return
 }
 
@@ -74,19 +73,20 @@ func.func @fabsf64(%arg0 : f64) -> () {
 
 // -----
 
+func.func @fabsanyvec(%arg0 : vector<5xf32>) -> () {
+  // CHECK: spv.CL.fabs {{%.*}} : vector<5xf16>
+  %2 = spv.CL.fabs %arg0 : vector<5xf32>
+  return
+}
+
+// -----
+
 func.func @fabs(%arg0 : i32) -> () {
   // expected-error @+1 {{op operand #0 must be 16/32/64-bit float or vector of 16/32/64-bit float values}}
   %2 = spv.CL.fabs %arg0 : i32
   return
 }
 
-// -----
-
-func.func @fabs(%arg0 : vector<5xf32>) -> () {
-  // expected-error @+1 {{op operand #0 must be 16/32/64-bit float or vector of 16/32/64-bit float values of length 2/3/4}}
-  %2 = spv.CL.fabs %arg0 : vector<5xf32>
-  return
-}
 
 // -----
 
@@ -136,19 +136,20 @@ func.func @sabsi8(%arg0 : i8) -> () {
 
 // -----
 
+func.func @sabsanyvec(%arg0 : vector<5xi32>) -> () {
+  // CHECK: spv.CL.s_abs {{%.*}} : vector<5xi16>
+  %2 = spv.CL.s_abs %arg0 : vector<5xi32>
+  return
+}
+
+// -----
+
 func.func @sabs(%arg0 : f32) -> () {
   // expected-error @+1 {{op operand #0 must be 8/16/32/64-bit integer or vector of 8/16/32/64-bit integer values}}
   %2 = spv.CL.s_abs %arg0 : f32
   return
 }
 
-// -----
-
-func.func @sabs(%arg0 : vector<5xi32>) -> () {
-  // expected-error @+1 {{op operand #0 must be 8/16/32/64-bit integer or vector of 8/16/32/64-bit integer values of length 2/3/4}}
-  %2 = spv.CL.s_abs %arg0 : vector<5xi32>
-  return
-}
 
 // -----
 

@@ -4049,7 +4049,13 @@ def SPV_Int32 : TypeAlias<I32, "Int32">;
 def SPV_Float32 : TypeAlias<F32, "Float32">;
 def SPV_Float : FloatOfWidths<[16, 32, 64]>;
 def SPV_Float16or32 : FloatOfWidths<[16, 32]>;
-def SPV_Vector : VectorOfLengthAndType<[2, 3, 4, 8, 16],
+
+// remove the vector size restriction
+// Although the vector size can be upto (2^64-1), uint64
+// In tablegen, int is signed int, hence using the upper
+// limit of int64 rather than uint64, it should serve the purpose
+// for all practical cases
+def SPV_Vector : VectorOfLengthRangeAndType<[2, 9223372036854775807],
                                        [SPV_Bool, SPV_Integer, SPV_Float]>;
 // Component type check is done in the type parser for the following SPIR-V
 // dialect-specific types so we use "Any" here.
@@ -4100,10 +4106,10 @@ class SPV_JointMatrixOfType<list<Type> allowedTypes> :
     "Joint Matrix">;
 
 class SPV_ScalarOrVectorOf<Type type> :
-    AnyTypeOf<[type, VectorOfLengthAndType<[2, 3, 4, 8, 16], [type]>]>;
+    AnyTypeOf<[type, VectorOfLengthRangeAndType<[2, 9223372036854775807], [type]>]>;
 
 class SPV_ScalarOrVectorOrCoopMatrixOf<Type type> :
-    AnyTypeOf<[type, VectorOfLengthAndType<[2, 3, 4, 8, 16], [type]>,
+    AnyTypeOf<[type, VectorOfLengthRangeAndType<[2, 9223372036854775807], [type]>,
                SPV_CoopMatrixOfType<[type]>]>;
 
 def SPV_ScalarOrVector : AnyTypeOf<[SPV_Scalar, SPV_Vector]>;
