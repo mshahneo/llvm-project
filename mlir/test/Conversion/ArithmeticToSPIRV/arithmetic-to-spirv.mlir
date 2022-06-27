@@ -6,7 +6,7 @@
 
 module attributes {
   spv.target_env = #spv.target_env<
-    #spv.vce<v1.0, [Int8, Int16, Int64, Float16, Float64, Shader], []>, #spv.resource_limits<>>
+    #spv.vce<v1.0, [Int8, Int16, Int64, Float16, Float64, Shader, Kernel, VectorComputeINTEL], [SPV_INTEL_vector_compute]>, #spv.resource_limits<>>
 } {
 
 // Check integer operation conversions.
@@ -164,9 +164,10 @@ func.func @one_elem_vector(%arg0: vector<1xi32>) {
 }
 
 // CHECK-LABEL: @unsupported_5elem_vector
-func.func @unsupported_5elem_vector(%arg0: vector<5xi32>) {
+func.func @supported_5elem_vector(%arg0: vector<5xi32>, %arg1: vector<5xi32>) {
   // CHECK: arith.subi
-  %1 = arith.subi %arg0, %arg0: vector<5xi32>
+  // CHECK: spv.FSub %{{.*}}, %{{.*}}: vector<5xi32>
+  %1 = arith.subi %arg0, %arg1: vector<5xi32>
   return
 }
 
@@ -1141,9 +1142,9 @@ func.func @one_elem_vector(%arg0: vector<1xi32>) {
 }
 
 // CHECK-LABEL: @unsupported_5elem_vector
-func.func @unsupported_5elem_vector(%arg0: vector<5xi32>) {
+func.func @unsupported_5elem_vector(%arg0: vector<5xi32>, %arg1: vector<5xi32>) {
   // CHECK: subi
-  %1 = arith.subi %arg0, %arg0: vector<5xi32>
+  %1 = arith.subi %arg0, %arg1: vector<5xi32>
   return
 }
 

@@ -254,6 +254,18 @@ static Type convertVectorType(const spirv::TargetEnv &targetEnv,
   SmallVector<ArrayRef<spirv::Capability>, 2> capabilities;
   type.cast<spirv::CompositeType>().getExtensions(extensions, storageClass);
   type.cast<spirv::CompositeType>().getCapabilities(capabilities, storageClass);
+  // @mshahneo: We should have capability infered extensions as part of the
+  // requirements as well
+  // This would reduce the burden on adding extension requirement that may or
+  // maynot be added in CompositeType::getExtensions()
+  // for (auto &caps : capabilities) {
+  //   for (spirv::Capability cap : caps) {
+  //     llvm::Optional<::llvm::ArrayRef<::mlir::spirv::Extension>> ext =
+  //         getExtensions(cap);
+  //     if (ext.has_value())
+  //       extensions.push_back(ext.value());
+  //   }
+  // }
 
   // If all requirements are met, then we can accept this type as-is.
   if (succeeded(checkCapabilityRequirements(type, targetEnv, capabilities)) &&
@@ -824,16 +836,27 @@ bool SPIRVConversionTarget::isLegalOp(Operation *op) {
   SmallVector<ArrayRef<spirv::Extension>, 4> typeExtensions;
   SmallVector<ArrayRef<spirv::Capability>, 8> typeCapabilities;
   for (Type valueType : valueTypes) {
-    typeExtensions.clear();
-    valueType.cast<spirv::SPIRVType>().getExtensions(typeExtensions);
-    if (failed(checkExtensionRequirements(op->getName(), this->targetEnv,
-                                          typeExtensions)))
-      return false;
-
     typeCapabilities.clear();
     valueType.cast<spirv::SPIRVType>().getCapabilities(typeCapabilities);
     if (failed(checkCapabilityRequirements(op->getName(), this->targetEnv,
                                            typeCapabilities)))
+      return false;
+    typeExtensions.clear();
+    valueType.cast<spirv::SPIRVType>().getExtensions(typeExtensions);
+    // @mshahneo: We should have capability infered extensions as part of the
+    // requirements as well
+    // This would reduce the burden on adding extension requirement that may or
+    // maynot be added in CompositeType::getExtensions()
+    for (auto &caps : typeCapabilities) {
+      for (spirv::Capability cap : caps) {
+        llvm::Optional<::llvm::ArrayRef<::mlir::spirv::Extension>> ext =
+            getExtensions(cap);
+        if (ext.has_value())
+          typeExtensions.push_back(ext.value());
+      }
+    }
+    if (failed(checkExtensionRequirements(op->getName(), this->targetEnv,
+                                          typeExtensions)))
       return false;
   }
 

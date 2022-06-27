@@ -138,6 +138,9 @@ static LogicalResult roundTripModule(ModuleOp srcModule, bool emitDebugInfo,
   if (failed(spirv::serialize(*spirvModules.begin(), binary, options)))
     return failure();
 
+  // @mshahneo: test
+  // llvm::errs() << "After serialize\n";
+
   MLIRContext deserializationContext(context->getDialectRegistry());
   // TODO: we should only load the required dialects instead of all dialects.
   deserializationContext.loadAllAvailableDialects();
@@ -147,11 +150,17 @@ static LogicalResult roundTripModule(ModuleOp srcModule, bool emitDebugInfo,
   if (!spirvModule)
     return failure();
 
+  // @mshahneo: test
+  // llvm::errs() << "After de-serialize\n";
+
   // Wrap around in a new MLIR module.
   OwningOpRef<ModuleOp> dstModule(ModuleOp::create(
       FileLineColLoc::get(&deserializationContext,
                           /*filename=*/"", /*line=*/0, /*column=*/0)));
   dstModule->getBody()->push_front(spirvModule.release());
+
+  // @mshahneo: test
+  // dstModule->print(output);
   if (failed(verify(*dstModule)))
     return failure();
   dstModule->print(output);

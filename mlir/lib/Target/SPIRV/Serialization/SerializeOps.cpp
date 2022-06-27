@@ -208,54 +208,99 @@ LogicalResult Serializer::processFuncOp(spirv::FuncOp op) {
     return failure();
   }
 
-  // Declare the parameters.
-  for (auto arg : op.getArguments()) {
-    uint32_t argTypeID = 0;
-    if (failed(processType(op.getLoc(), arg.getType(), argTypeID))) {
+  // Handle external functions with LinkageAttributes differently
+  if (op.isExternal()) {
+    if (op->getAttr("LinkageAttributes")) {
+      // Add an entry block to set up the block arguments
+      // to match the signature of the function.
+      // This is to generate OpFunctionParameter for functions with
+      // LinkageAttributes
+      // WARNING: This operation has side-effect, it essentially adds a body
+      // to the func. Hence, making it not external anymore (isExternal()
+      // is going to return false for this function from now on)
+      // Hence, we'll remove the body once we are done with the serialization
+      op.addEntryBlock();
+      for (auto arg : op.getArguments()) {
+        uint32_t argTypeID = 0;
+        if (failed(processType(op.getLoc(), arg.getType(), argTypeID))) {
+          return failure();
+        }
+        auto argValueID = getNextID();
+        valueIDMap[arg] = argValueID;
+        encodeInstructionInto(functionHeader,
+                              spirv::Opcode::OpFunctionParameter,
+                              {argTypeID, argValueID});
+      }
+      // Don't need to process the added block, there is nothing to process, the
+      // fake body was added just to get the arguments, remove the body, since
+      // it's use is done
+      op.eraseBody();
+    } else
+      return op.emitError(
+          "external function without LinkageAttributes is unhandled");
+  } else {
+    // Declare the parameters.
+    for (auto arg : op.getArguments()) {
+      uint32_t argTypeID = 0;
+      if (failed(processType(op.getLoc(), arg.getType(), argTypeID))) {
+        return failure();
+      }
+      auto argValueID = getNextID();
+      valueIDMap[arg] = argValueID;
+      encodeInstructionInto(functionHeader, spirv::Opcode::OpFunctionParameter,
+                            {argTypeID, argValueID});
+    }
+    // Some instructions (e.g., OpVariable) in a function must be in the first
+    // block in the function. These instructions will be put in functionHeader.
+    // Thus, we put the label in functionHeader first, and omit it from the
+    // first block.
+
+    // OpLabel only needs to be added for functions with body (including empty
+    // body) Since, we added a fake body for functions with Import Linkage
+    // attributes, These functions are essentially function delcaration, so they
+    // should not have OpLabel and a terminating instruction
+    encodeInstructionInto(functionHeader, spirv::Opcode::OpLabel,
+                          {getOrCreateBlockID(&op.front())});
+
+    if (failed(processBlock(&op.front(), /*omitLabel=*/true)))
+      return failure();
+    if (failed(visitInPrettyBlockOrder(
+            &op.front(), [&](Block *block) { return processBlock(block); },
+            /*skipHeader=*/true))) {
       return failure();
     }
-    auto argValueID = getNextID();
-    valueIDMap[arg] = argValueID;
-    encodeInstructionInto(functionHeader, spirv::Opcode::OpFunctionParameter,
-                          {argTypeID, argValueID});
+    // There might be OpPhi instructions who have value references needing to
+    // fix.
+    for (const auto &deferredValue : deferredPhiValues) {
+      Value value = deferredValue.first;
+      uint32_t id = getValueID(value);
+      LLVM_DEBUG(llvm::dbgs() << "[phi] fix reference of value " << value
+                              << " to id = " << id << '\n');
+      assert(id && "OpPhi references undefined value!");
+      for (size_t offset : deferredValue.second)
+        functionBody[offset] = id;
+    }
+    deferredPhiValues.clear();
   }
-
-  // Process the body.
-  if (op.isExternal()) {
-    return op.emitError("external function is unhandled");
-  }
-
-  // Some instructions (e.g., OpVariable) in a function must be in the first
-  // block in the function. These instructions will be put in functionHeader.
-  // Thus, we put the label in functionHeader first, and omit it from the first
-  // block.
-  encodeInstructionInto(functionHeader, spirv::Opcode::OpLabel,
-                        {getOrCreateBlockID(&op.front())});
-  if (failed(processBlock(&op.front(), /*omitLabel=*/true)))
-    return failure();
-  if (failed(visitInPrettyBlockOrder(
-          &op.front(), [&](Block *block) { return processBlock(block); },
-          /*skipHeader=*/true))) {
-    return failure();
-  }
-
-  // There might be OpPhi instructions who have value references needing to fix.
-  for (const auto &deferredValue : deferredPhiValues) {
-    Value value = deferredValue.first;
-    uint32_t id = getValueID(value);
-    LLVM_DEBUG(llvm::dbgs() << "[phi] fix reference of value " << value
-                            << " to id = " << id << '\n');
-    assert(id && "OpPhi references undefined value!");
-    for (size_t offset : deferredValue.second)
-      functionBody[offset] = id;
-  }
-  deferredPhiValues.clear();
 
   LLVM_DEBUG(llvm::dbgs() << "-- completed function '" << op.getName()
                           << "' --\n");
+
+  // Insert Decorations based on Function Attributes
+  // Only attributes I should be considering for decoration are the
+  // ::mlir::spirv::Decoration attributes
+  for (auto attr : op->getAttrs()) {
+    // Only generate OpDecorate op for spirv::Decoration attributes
+    if (mlir::spirv::symbolizeEnum<spirv::Decoration>(
+            attr.getName().strref()) != llvm::None) {
+      if (failed(processDecoration(op.getLoc(), funcID, attr))) {
+        return failure();
+      }
+    }
+  }
+
   // Insert OpFunctionEnd.
   encodeInstructionInto(functionBody, spirv::Opcode::OpFunctionEnd, {});
-
   functions.append(functionHeader.begin(), functionHeader.end());
   functions.append(functionBody.begin(), functionBody.end());
   functionHeader.clear();

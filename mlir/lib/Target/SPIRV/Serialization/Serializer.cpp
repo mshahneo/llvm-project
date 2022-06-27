@@ -217,6 +217,31 @@ LogicalResult Serializer::processDecoration(Location loc, uint32_t resultID,
   SmallVector<uint32_t, 1> args;
   switch (*decoration) {
   case spirv::Decoration::Binding:
+  case spirv::Decoration::LinkageAttributes: {
+    // Get the value of the Linkage Attributes
+    // e.g., LinkageAttributes=["name", "LinkageType"]
+    // TODO: check if attribute values are passed in the following format
+    // LinkageAttributes=["name", "LinkageType"] At this point we assume, they
+    // are passed in this format
+    auto arrayAttrVal = attr.getValue().dyn_cast<ArrayAttr>();
+    if (arrayAttrVal.size() != 2)
+      return emitError(loc, "attribute must have 2 values ") << attrName;
+    // Handle the attribute values, we expect values of type:
+    // StringAttr (String name) and
+    // StringAttr (String LinkageType)
+    // Encode the Linkage Name (string literal to uint32_t)
+    spirv::encodeStringLiteralInto(
+        args, arrayAttrVal[0].dyn_cast<StringAttr>().strref());
+    // Encode LinkageType
+    // Add the Linkagetype to the args
+    auto linkageType = static_cast<uint32_t>(
+        spirv::symbolizeEnum<spirv::LinkageType>(
+            arrayAttrVal[1].dyn_cast<StringAttr>().strref())
+            .value());
+    // llvm::errs() << "Linkage type: " << linkageType << "\n";
+    args.push_back(linkageType);
+    break;
+  }
   case spirv::Decoration::DescriptorSet:
   case spirv::Decoration::Location:
     if (auto intAttr = attr.getValue().dyn_cast<IntegerAttr>()) {
@@ -242,6 +267,9 @@ LogicalResult Serializer::processDecoration(Location loc, uint32_t resultID,
   case spirv::Decoration::NoPerspective:
   case spirv::Decoration::Restrict:
   case spirv::Decoration::RelaxedPrecision:
+  case spirv::Decoration::VectorComputeVariableINTEL:
+  case spirv::Decoration::VectorComputeFunctionINTEL:
+  case spirv::Decoration::VectorComputeCallableFunctionINTEL:
     // For unit attributes, the args list has no values so we do nothing
     if (auto unitAttr = attr.getValue().dyn_cast<UnitAttr>())
       break;

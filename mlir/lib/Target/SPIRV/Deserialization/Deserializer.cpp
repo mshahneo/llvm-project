@@ -238,8 +238,10 @@ LogicalResult spirv::Deserializer::processDecoration(ArrayRef<uint32_t> words) {
   if (decorationName.empty()) {
     return emitError(unknownLoc, "invalid Decoration code : ") << words[1];
   }
-  auto attrName = llvm::convertToSnakeFromCamelCase(decorationName);
-  auto symbol = opBuilder.getStringAttr(attrName);
+  // @mshahneo:
+  // Why are we doing this? Any specific reason?
+  // auto attrName = llvm::convertToSnakeFromCamelCase(decorationName);
+  auto symbol = opBuilder.getStringAttr(decorationName);
   switch (static_cast<spirv::Decoration>(words[1])) {
   case spirv::Decoration::DescriptorSet:
   case spirv::Decoration::Binding:
@@ -266,6 +268,44 @@ LogicalResult spirv::Deserializer::processDecoration(ArrayRef<uint32_t> words) {
     }
     typeDecorations[words[0]] = words[2];
     break;
+  case spirv::Decoration::LinkageAttributes: {
+    if (words.size() < 4) {
+      return emitError(unknownLoc, "OpDecorate with ")
+             << decorationName
+             << " needs at least 1 string and 1 integer literal";
+    }
+    // LinkageAttributes has two parameters ["name", "LinkageType"]
+    // e.g., OpDecorate %imported_func LinkageAttributes "outside.func" Import
+    // "name" is a stringliteral encoded as uint32_t,
+    // hence the size of name is variable length which results in  words.size()
+    // being variable length, words.size() = 3 + strlen(name)/4 + 1
+    // uint32_t linkageNameLen = words.size() - 3;
+    unsigned wordIndex = 2;
+    StringRef linkageName = spirv::decodeStringLiteral(words, wordIndex);
+    std::vector<mlir::Attribute> attrElements;
+    attrElements.push_back(opBuilder.getStringAttr(linkageName));
+    attrElements.push_back(opBuilder.getStringAttr(stringifyLinkageType(
+        static_cast<spirv::LinkageType>(words[words.size() - 1]))));
+    // auto linkageNameAttr = opBuilder.getStringAttr(linkageName);
+    // auto linkageTypeAttr = opBuilder.getStringAttr(
+    //     stringifyLinkageType(static_cast<spirv::LinkageType>(word.size() -
+    //     1)));
+    ArrayAttr linkageAttrVal = opBuilder.getArrayAttr(attrElements);
+    decorations[words[0]].set(symbol, linkageAttrVal.dyn_cast<Attribute>());
+
+    // llvm::errs() << "words.size() = " << words.size()
+    //              << " linkage Name = " << linkageName
+    //              << " New Index = " << wordIndex << "\n";
+
+    // We have two value for the LinkageAttributes:["name", "LinkageType"]
+    // words[1] = LinkageName: StringAttr
+    // words[2] = LinkageType:
+    // ArrayRef<Attribute> value;
+    // // getArrayAttr()
+    // decorations[words[0]].set(
+    //   symbol, opBuilder.get
+    break;
+  }
   case spirv::Decoration::Aliased:
   case spirv::Decoration::Block:
   case spirv::Decoration::BufferBlock:
@@ -275,6 +315,9 @@ LogicalResult spirv::Deserializer::processDecoration(ArrayRef<uint32_t> words) {
   case spirv::Decoration::NoPerspective:
   case spirv::Decoration::Restrict:
   case spirv::Decoration::RelaxedPrecision:
+  case spirv::Decoration::VectorComputeVariableINTEL:
+  case spirv::Decoration::VectorComputeFunctionINTEL:
+  case spirv::Decoration::VectorComputeCallableFunctionINTEL:
     if (words.size() != 2) {
       return emitError(unknownLoc, "OpDecoration with ")
              << decorationName << "needs a single target <id>";
@@ -376,11 +419,28 @@ spirv::Deserializer::processFunction(ArrayRef<uint32_t> operands) {
            << functionType << " and return type " << resultType << " specified";
   }
 
+  // @mshahneo:test
+  // llvm::errs() << "test 1 \n";
+
   std::string fnName = getFunctionSymbol(fnID);
   auto funcOp = opBuilder.create<spirv::FuncOp>(
       unknownLoc, fnName, functionType, fnControl.value());
+  // @mshahneo
+  // Processing other function attributes
+  if (decorations.count(fnID)) {
+    for (auto attr : decorations[fnID].getAttrs())
+      funcOp->setAttr(attr.getName(), attr.getValue());
+  }
+
   curFunction = funcMap[fnID] = funcOp;
+
+  // @mshahneo:test
+  // llvm::errs() << "test 2 \n";
+
   auto *entryBlock = funcOp.addEntryBlock();
+  // @mshahneo:test
+  // llvm::errs() << "test 3 \n";
+
   LLVM_DEBUG({
     logger.startLine()
         << "//===-------------------------------------------===//\n";
@@ -429,6 +489,13 @@ spirv::Deserializer::processFunction(ArrayRef<uint32_t> operands) {
     }
   }
 
+  // @mshahneo:
+  // entryBlock is needed to access the arguments, Once that is done, we can
+  // erase the block for functions with LinkageAttributes, since these are
+  // essentially function declarations, so they have no body
+  if (funcOp->getAttr("LinkageAttributes"))
+    funcOp.eraseBody();
+  /////////////////
   // RAII guard to reset the insertion point to the module's region after
   // deserializing the body of this function.
   OpBuilder::InsertionGuard moduleInsertionGuard(opBuilder);
@@ -458,7 +525,8 @@ spirv::Deserializer::processFunction(ArrayRef<uint32_t> operands) {
   if (failed(processLabel(instOperands))) {
     return failure();
   }
-
+  // @mshahneo:test
+  // llvm::errs() << "test 4 \n";
   // Then process all the other instructions in the function until we hit
   // OpFunctionEnd.
   while (succeeded(sliceInstruction(opcode, instOperands,
@@ -471,7 +539,8 @@ spirv::Deserializer::processFunction(ArrayRef<uint32_t> operands) {
   if (opcode != spirv::Opcode::OpFunctionEnd) {
     return failure();
   }
-
+  // @mshahneo:test
+  // llvm::errs() << "test 5 \n";
   return processFunctionEnd(instOperands);
 }
 
@@ -487,7 +556,8 @@ spirv::Deserializer::processFunctionEnd(ArrayRef<uint32_t> operands) {
   if (failed(wireUpBlockArgument()) || failed(structurizeControlFlow())) {
     return failure();
   }
-
+  // @mshahneo:test
+  // llvm::errs() << "test 6 \n";
   curBlock = nullptr;
   curFunction = llvm::None;
 
@@ -1169,6 +1239,11 @@ LogicalResult spirv::Deserializer::processConstant(ArrayRef<uint32_t> operands,
   };
 
   auto resultID = operands[1];
+
+  // @mshaneo:test
+  // for (auto op : operands) {
+  //   llvm::errs() << op << "\n";
+  // }
 
   if (auto intType = resultType.dyn_cast<IntegerType>()) {
     auto bitwidth = intType.getWidth();

@@ -152,16 +152,16 @@ void CompositeType::getExtensions(
         // VectorAnyIntel capability which enables
         // vector size of between (2 - (2^63 - 1)))
         // is enabled by SPV_INTEL_vector_compute extension
-        auto vecSize = getNumElements();
-        llvm::SmallVector<uint32_t, 5> allowedVecRange = {2, 3, 4, 8, 16};
-        if (vecSize >= 2 &&
-            (llvm::none_of(allowedVecRange, [&](uint32_t allowedVecSize) {
-              return vecSize == allowedVecSize;
-            }))) {
-          static const Extension exts[] = {Extension::SPV_INTEL_vector_compute};
-          ArrayRef<Extension> ref(exts, llvm::array_lengthof(exts));
-          extensions.push_back(ref);
-        }
+        // auto vecSize = getNumElements();
+        // llvm::SmallVector<uint32_t, 5> allowedVecRange = {2, 3, 4, 8, 16};
+        // if (vecSize >= 2 &&
+        //     (llvm::none_of(allowedVecRange, [&](uint32_t allowedVecSize) {
+        //       return vecSize == allowedVecSize;
+        //     }))) {
+        //   static const Extension exts[] =
+        //   {Extension::SPV_INTEL_vector_compute}; ArrayRef<Extension>
+        //   ref(exts, llvm::array_lengthof(exts)); extensions.push_back(ref);
+        // }
         return type.getElementType().cast<ScalarType>().getExtensions(
             extensions, storage);
       })
@@ -177,9 +177,13 @@ void CompositeType::getCapabilities(
           [&](auto type) { type.getCapabilities(capabilities, storage); })
       .Case<VectorType>([&](VectorType type) {
         auto vecSize = getNumElements();
-        llvm::SmallVector<Capability, 2> caps;
+        // llvm::SmallVector<const Capability, 2> caps;
         if (vecSize == 8 || vecSize == 16) {
-          caps.push_back(Capability::Vector16);
+          // caps.push_back(const(Capability::Vector16));
+          static const Capability caps[] = {Capability::Vector16,
+                                            Capability::VectorAnyINTEL};
+          ArrayRef<Capability> ref(caps, llvm::array_lengthof(caps));
+          capabilities.push_back(ref);
         }
         // If the vector size is between (2 - (2^63 - 1))
         // and not of any size 2, 3, 4, 8, and 16
@@ -190,10 +194,25 @@ void CompositeType::getCapabilities(
             (llvm::none_of(allowedVecRange, [&](uint32_t allowedVecSize) {
               return vecSize == allowedVecSize;
             }))) {
-          caps.push_back(Capability::VectorAnyINTEL);
+          static const Capability caps[] = {Capability::VectorAnyINTEL};
+          ArrayRef<Capability> ref(caps, llvm::array_lengthof(caps));
+          capabilities.push_back(ref);
+          // caps.push_back(const(Capability::VectorAnyINTEL));
         }
-        ArrayRef<Capability> ref(caps);
-        capabilities.push_back(ref);
+
+        // @mshahneo:test
+        for (auto cs : capabilities) {
+          for (auto c : cs) {
+            llvm::errs() << "Capabilities: " << spirv::stringifyCapability(c)
+                         << "\n";
+          }
+        }
+        // @end test
+
+        // if (!caps.empty()) {
+        //   ArrayRef<Capability> ref(caps);
+        //   capabilities.push_back(ref);
+        // }
         return type.getElementType().cast<ScalarType>().getCapabilities(
             capabilities, storage);
       })

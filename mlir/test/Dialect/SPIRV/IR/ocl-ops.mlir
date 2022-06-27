@@ -19,7 +19,7 @@ func.func @expvec(%arg0 : vector<3xf16>) -> () {
 // -----
 
 func.func @expanyvec(%arg0 : vector<5xf32>) -> () {
-  // CHECK: spv.CL.exp {{%.*}} : vector<5xf16>
+  // CHECK: spv.CL.exp {{%.*}} : vector<5xf32>
   %2 = spv.CL.exp %arg0 : vector<5xf32>
   return
 }
@@ -74,7 +74,7 @@ func.func @fabsf64(%arg0 : f64) -> () {
 // -----
 
 func.func @fabsanyvec(%arg0 : vector<5xf32>) -> () {
-  // CHECK: spv.CL.fabs {{%.*}} : vector<5xf16>
+  // CHECK: spv.CL.fabs {{%.*}} : vector<5xf32>
   %2 = spv.CL.fabs %arg0 : vector<5xf32>
   return
 }
@@ -137,7 +137,7 @@ func.func @sabsi8(%arg0 : i8) -> () {
 // -----
 
 func.func @sabsanyvec(%arg0 : vector<5xi32>) -> () {
-  // CHECK: spv.CL.s_abs {{%.*}} : vector<5xi16>
+  // CHECK: spv.CL.s_abs {{%.*}} : vector<5xi32>
   %2 = spv.CL.s_abs %arg0 : vector<5xi32>
   return
 }
