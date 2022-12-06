@@ -3462,7 +3462,9 @@ LogicalResult spirv::ModuleOp::verifyRegions() {
       }
       entryPoints[key] = entryPointOp;
     } else if (auto funcOp = dyn_cast<spirv::FuncOp>(op)) {
-      if (funcOp.isExternal())
+      // If the function is external and does not have LinkageAttributes
+      // throw an error, LinkageAttributes is used to import external functions
+      if (funcOp.isExternal() && !funcOp->getAttr("linkage_attributes"))
         return op.emitError("'spirv.module' cannot contain external functions");
 
       // TODO: move this check to spirv.func.
