@@ -208,7 +208,8 @@ void Serializer::processMemoryModel() {
 LogicalResult Serializer::processDecoration(Location loc, uint32_t resultID,
                                             NamedAttribute attr) {
   auto attrName = attr.getName().strref();
-  auto decorationName = llvm::convertToCamelFromSnakeCase(attrName, true);
+  auto decorationName =
+      llvm::convertToCamelFromSnakeCase(attrName, /*capitalizeFirst=*/true);
   auto decoration = spirv::symbolizeDecoration(decorationName);
   if (!decoration) {
     return emitError(
@@ -218,6 +219,27 @@ LogicalResult Serializer::processDecoration(Location loc, uint32_t resultID,
   }
   SmallVector<uint32_t, 1> args;
   switch (*decoration) {
+  case spirv::Decoration::LinkageAttributes: {
+    // Get the value of the Linkage Attributes
+    // e.g., LinkageAttributes=["Name", "LinkageType"]
+    // TODO: check if attribute values are passed in the following format
+    // LinkageAttributes=["Name", "LinkageType"]
+    // At this point we assume, they are passed in this format
+    auto arrayAttrVal = attr.getValue().dyn_cast<ArrayAttr>();
+    if (arrayAttrVal.size() != 2)
+      return emitError(loc, "attribute must have 2 values ") << attrName;
+    // Encode the Linkage Name (string literal to uint32_t)
+    spirv::encodeStringLiteralInto(
+        args, arrayAttrVal[0].dyn_cast<StringAttr>().strref());
+    // Encode LinkageType
+    // Add the Linkagetype to the args
+    auto linkageType = static_cast<uint32_t>(
+        spirv::symbolizeEnum<spirv::LinkageType>(
+            arrayAttrVal[1].dyn_cast<StringAttr>().strref())
+            .value());
+    args.push_back(linkageType);
+    break;
+  }
   case spirv::Decoration::Binding:
   case spirv::Decoration::DescriptorSet:
   case spirv::Decoration::Location:
