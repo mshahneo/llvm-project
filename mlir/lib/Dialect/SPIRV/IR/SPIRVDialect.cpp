@@ -181,9 +181,9 @@ static Type parseAndVerifyType(SPIRVDialect const &dialect,
       parser.emitError(typeLoc, "only 1-D vector allowed but found ") << t;
       return Type();
     }
-    if (t.getNumElements() > 4) {
+    if ((t.getNumElements() < 2 && t.getNumElements() > 9223372036854775807)) {
       parser.emitError(
-          typeLoc, "vector length has to be less than or equal to 4 but found ")
+          typeLoc, "vector length has to be between [2 and 2^63-1] but found ")
           << t.getNumElements();
       return Type();
     }
