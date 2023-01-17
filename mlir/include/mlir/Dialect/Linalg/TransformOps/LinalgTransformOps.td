@@ -17,6 +17,7 @@ include "mlir/Dialect/SCF/IR/DeviceMappingInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/IR/EnumAttr.td"
 include "mlir/IR/OpBase.td"
+include "mlir/IR/RegionKindInterface.td"
 
 def DecomposeOp : Op<Transform_Dialect, "structured.decompose",
     [FunctionalStyleTransformOpTrait, MemoryEffectsOpInterface,
@@ -387,6 +388,28 @@ def PromoteOp : Op<Transform_Dialect, "structured.promote",
   }];
 }
 
+def ReplaceOp : Op<Transform_Dialect, "structured.replace",
+    [IsolatedFromAbove, DeclareOpInterfaceMethods<TransformOpInterface>,
+     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>] # GraphRegionNoTerminator.traits> {
+  let description = [{
+    Replace all `target` payload ops with the single op that is contained in
+    this op's region. All targets must have zero arguments and must be isolated
+    from above.
+
+    This op is for debugging/experiments only.
+
+    #### Return modes
+
+    This operation consumes the `target` handle.
+  }];
+
+  let arguments = (ins PDL_Operation:$target);
+  let results = (outs PDL_Operation:$replacement);
+  let regions = (region SizedRegion<1>:$bodyRegion);
+  let assemblyFormat = "$target attr-dict-with-keyword regions";
+  let hasVerifier = 1;
+}
+
 def ScalarizeOp : Op<Transform_Dialect, "structured.scalarize",
     [FunctionalStyleTransformOpTrait, MemoryEffectsOpInterface,
      TransformOpInterface, TransformEachOpTrait]> {
@@ -644,7 +667,8 @@ def TileReductionUsingScfOp : Op<Transform_Dialect, "structured.tile_reduction_u
 
     #### Return modes
 
-    This 3 returned handles point to:
+    This 4 returned handles point to:
+      - the parent for op,
       - the fill op used to initialize the neutral element,
       - the parallel tiled op and
       - the result-combining op.
@@ -699,7 +723,8 @@ def TileReductionUsingScfOp : Op<Transform_Dialect, "structured.tile_reduction_u
 
   let arguments = (ins PDL_Operation:$target,
                    DefaultValuedAttr<I64ArrayAttr, "{}">:$tile_sizes);
-  let results = (outs PDL_Operation:$fill_op,
+  let results = (outs PDL_Operation:$for_op,
+                      PDL_Operation:$fill_op,
                       PDL_Operation:$split_linalg_op,
                       PDL_Operation:$combining_linalg_op);
 
@@ -728,10 +753,13 @@ def TileReductionUsingForeachThreadOp :
     All the partial reduction value is are parallel inserted to create a new
     tensor. After the loop a merge operation is created to do a final reduction
     with the partial reductions tensor.
+    If an extra `tile_sizes` parameter is passed the tiles are cyclically
+    distributed on the threads of the `scf.foreach_threads` loop.
 
     #### Return modes
 
-    This 3 returned handles point to:
+    This 4 returned handles point to:
+      - the parent foreach_thread op,
       - the fill op used to initialize the neutral element,
       - the parallel tiled op and
       - the result-combining op.
@@ -771,7 +799,7 @@ def TileReductionUsingForeachThreadOp :
         scf.foreach_thread.perform_concurrently {
           tensor.parallel_insert_slice %7 into %arg3[0, %arg2] [%dim, 1] [1, 1] : tensor<?xf32> into tensor<?x5xf32>
         }
-      } {thread_dim_mapping = []}
+      } {mapping = []}
       %3 = linalg.generic {indexing_maps = [#map3, #map4], iterator_types = ["parallel", "reduction"]} ins(%2 : tensor<?x5xf32>) outs(%arg1 : tensor<?xf32>) {
       ^bb0(%in: f32, %out: f32):
         %4 = arith.addf %in, %out : f32
@@ -781,8 +809,11 @@ def TileReductionUsingForeachThreadOp :
   }];
 
   let arguments = (ins PDL_Operation:$target,
-                   DefaultValuedAttr<I64ArrayAttr, "{}">:$num_threads);
-  let results = (outs PDL_Operation:$fill_op,
+                   DefaultValuedAttr<I64ArrayAttr, "{}">:$num_threads,
+                   DefaultValuedAttr<I64ArrayAttr, "{}">:$tile_sizes,
+                   OptionalAttr<DeviceMappingArrayAttr>:$mapping);
+  let results = (outs PDL_Operation:$foreach_thread_op,
+                      PDL_Operation:$fill_op,
                       PDL_Operation:$split_linalg_op,
                       PDL_Operation:$combining_linalg_op);
 
@@ -1064,6 +1095,7 @@ def VectorizeOp : Op<Transform_Dialect, "structured.vectorize",
 
   let arguments = (ins PDL_Operation:$target,
                    UnitAttr:$vectorize_padding,
+                   UnitAttr:$vectorize_nd_extract,
                    UnitAttr:$disable_multi_reduction_to_contract_patterns,
                    UnitAttr:$disable_transfer_permutation_map_lowering_patterns);
   let results = (outs PDL_Operation:$transformed);
@@ -1071,7 +1103,9 @@ def VectorizeOp : Op<Transform_Dialect, "structured.vectorize",
   let assemblyFormat = "$target attr-dict";
 
   let builders = [
-    OpBuilder<(ins "Value":$target, CArg<"bool", "false">:$vectorizePadding)>
+    OpBuilder<(ins "Value":$target,
+               CArg<"bool", "false">:$vectorizePadding,
+               CArg<"bool", "false">:$vectorizeNDExtract)>,
   ];
   let extraClassDeclaration = [{
     ::mlir::DiagnosedSilenceableFailure applyToOne(

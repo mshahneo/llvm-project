@@ -15,7 +15,6 @@
 #include "llvm/Transforms/Utils/CodeExtractor.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
-#include "llvm/ADT/Optional.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -1539,7 +1538,8 @@ static void fixupDebugInfoPostExtraction(Function &OldFunc, Function &NewFunc,
   assert(OldSP->getUnit() && "Missing compile unit for subprogram");
   DIBuilder DIB(*OldFunc.getParent(), /*AllowUnresolved=*/false,
                 OldSP->getUnit());
-  auto SPType = DIB.createSubroutineType(DIB.getOrCreateTypeArray(None));
+  auto SPType =
+      DIB.createSubroutineType(DIB.getOrCreateTypeArray(std::nullopt));
   DISubprogram::DISPFlags SPFlags = DISubprogram::SPFlagDefinition |
                                     DISubprogram::SPFlagOptimized |
                                     DISubprogram::SPFlagLocalToUnit;
@@ -1556,6 +1556,7 @@ static void fixupDebugInfoPostExtraction(Function &OldFunc, Function &NewFunc,
   //     point to a variable in the wrong scope.
   SmallDenseMap<DINode *, DINode *> RemappedMetadata;
   SmallVector<Instruction *, 4> DebugIntrinsicsToDelete;
+  DenseMap<const MDNode *, MDNode *> Cache;
   for (Instruction &I : instructions(NewFunc)) {
     auto *DII = dyn_cast<DbgInfoIntrinsic>(&I);
     if (!DII)
@@ -1588,17 +1589,23 @@ static void fixupDebugInfoPostExtraction(Function &OldFunc, Function &NewFunc,
       DebugIntrinsicsToDelete.push_back(DVI);
       continue;
     }
-
-    // Point the intrinsic to a fresh variable within the new function.
-    DILocalVariable *OldVar = DVI->getVariable();
-    DINode *&NewVar = RemappedMetadata[OldVar];
-    if (!NewVar)
-      NewVar = DIB.createAutoVariable(
-          NewSP, OldVar->getName(), OldVar->getFile(), OldVar->getLine(),
-          OldVar->getType(), /*AlwaysPreserve=*/false, DINode::FlagZero,
-          OldVar->getAlignInBits());
-    DVI->setVariable(cast<DILocalVariable>(NewVar));
+    // If the variable was in the scope of the old function, i.e. it was not
+    // inlined, point the intrinsic to a fresh variable within the new function.
+    if (!DVI->getDebugLoc().getInlinedAt()) {
+      DILocalVariable *OldVar = DVI->getVariable();
+      DINode *&NewVar = RemappedMetadata[OldVar];
+      if (!NewVar) {
+        DILocalScope *NewScope = DILocalScope::cloneScopeForSubprogram(
+            *OldVar->getScope(), *NewSP, Ctx, Cache);
+        NewVar = DIB.createAutoVariable(
+            NewScope, OldVar->getName(), OldVar->getFile(), OldVar->getLine(),
+            OldVar->getType(), /*AlwaysPreserve=*/false, DINode::FlagZero,
+            OldVar->getAlignInBits());
+      }
+      DVI->setVariable(cast<DILocalVariable>(NewVar));
+    }
   }
+
   for (auto *DII : DebugIntrinsicsToDelete)
     DII->eraseFromParent();
   DIB.finalizeSubprogram(NewSP);
@@ -1607,7 +1614,8 @@ static void fixupDebugInfoPostExtraction(Function &OldFunc, Function &NewFunc,
   // function.
   for (Instruction &I : instructions(NewFunc)) {
     if (const DebugLoc &DL = I.getDebugLoc())
-      I.setDebugLoc(DILocation::get(Ctx, DL.getLine(), DL.getCol(), NewSP));
+      I.setDebugLoc(
+          DebugLoc::replaceInlinedAtSubprogram(DL, *NewSP, Ctx, Cache));
 
     // Loop info metadata may contain line locations. Fix them up.
     auto updateLoopInfoLoc = [&Ctx, NewSP](Metadata *MD) -> Metadata * {

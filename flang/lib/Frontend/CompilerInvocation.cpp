@@ -139,7 +139,7 @@ static void parseCodeGenArgs(Fortran::frontend::CodeGenOptions &opts,
                   .Case("ropi", llvm::Reloc::ROPI)
                   .Case("rwpi", llvm::Reloc::RWPI)
                   .Case("ropi-rwpi", llvm::Reloc::ROPI_RWPI)
-                  .Default(llvm::None);
+                  .Default(std::nullopt);
     if (RM.has_value())
       opts.setRelocationModel(*RM);
     else
@@ -171,6 +171,14 @@ static void parseTargetArgs(TargetOptions &opts, llvm::opt::ArgList &args) {
   if (const llvm::opt::Arg *a =
           args.getLastArg(clang::driver::options::OPT_triple))
     opts.triple = a->getValue();
+
+  if (const llvm::opt::Arg *a =
+          args.getLastArg(clang::driver::options::OPT_target_cpu))
+    opts.cpu = a->getValue();
+
+  for (const llvm::opt::Arg *currentArg :
+       args.filtered(clang::driver::options::OPT_target_feature))
+    opts.featuresAsWritten.emplace_back(currentArg->getValue());
 }
 
 // Tweak the frontend configuration based on the frontend action
@@ -718,6 +726,16 @@ static bool parseFloatingPointArgs(CompilerInvocation &invoc,
 
   if (args.getLastArg(clang::driver::options::OPT_freciprocal_math)) {
     opts.ReciprocalMath = true;
+  }
+
+  if (args.getLastArg(clang::driver::options::OPT_ffast_math)) {
+    opts.NoHonorInfs = true;
+    opts.NoHonorNaNs = true;
+    opts.AssociativeMath = true;
+    opts.ReciprocalMath = true;
+    opts.ApproxFunc = true;
+    opts.NoSignedZeros = true;
+    opts.setFPContractMode(LangOptions::FPM_Fast);
   }
 
   return true;

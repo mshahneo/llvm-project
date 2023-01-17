@@ -763,6 +763,7 @@ static LogicalResult replaceDimOrSym(AffineMap *map,
                                      unsigned dimOrSymbolPosition,
                                      SmallVectorImpl<Value> &dims,
                                      SmallVectorImpl<Value> &syms) {
+  MLIRContext *ctx = map->getContext();
   bool isDimReplacement = (dimOrSymbolPosition < dims.size());
   unsigned pos = isDimReplacement ? dimOrSymbolPosition
                                   : dimOrSymbolPosition - dims.size();
@@ -781,20 +782,24 @@ static LogicalResult replaceDimOrSym(AffineMap *map,
   // Compute the map, dims and symbols coming from the AffineApplyOp.
   AffineMap composeMap = affineApply.getAffineMap();
   assert(composeMap.getNumResults() == 1 && "affine.apply with >1 results");
-  AffineExpr composeExpr =
+  SmallVector<Value> composeOperands(affineApply.getMapOperands().begin(),
+                                     affineApply.getMapOperands().end());
+  // Canonicalize the map to promote dims to symbols when possible. This is to
+  // avoid generating invalid maps.
+  canonicalizeMapAndOperands(&composeMap, &composeOperands);
+  AffineExpr replacementExpr =
       composeMap.shiftDims(dims.size()).shiftSymbols(syms.size()).getResult(0);
   ValueRange composeDims =
-      affineApply.getMapOperands().take_front(composeMap.getNumDims());
+      ArrayRef<Value>(composeOperands).take_front(composeMap.getNumDims());
   ValueRange composeSyms =
-      affineApply.getMapOperands().take_back(composeMap.getNumSymbols());
-
-  // Append the dims and symbols where relevant and perform the replacement.
-  MLIRContext *ctx = map->getContext();
+      ArrayRef<Value>(composeOperands).take_back(composeMap.getNumSymbols());
   AffineExpr toReplace = isDimReplacement ? getAffineDimExpr(pos, ctx)
                                           : getAffineSymbolExpr(pos, ctx);
+
+  // Append the dims and symbols where relevant and perform the replacement.
   dims.append(composeDims.begin(), composeDims.end());
   syms.append(composeSyms.begin(), composeSyms.end());
-  *map = map->replace(toReplace, composeExpr, dims.size(), syms.size());
+  *map = map->replace(toReplace, replacementExpr, dims.size(), syms.size());
 
   return success();
 }
@@ -2007,7 +2012,7 @@ namespace {
 static Optional<uint64_t> getTrivialConstantTripCount(AffineForOp forOp) {
   int64_t step = forOp.getStep();
   if (!forOp.hasConstantBounds() || step <= 0)
-    return None;
+    return std::nullopt;
   int64_t lb = forOp.getConstantLowerBound();
   int64_t ub = forOp.getConstantUpperBound();
   return ub - lb <= 0 ? 0 : (ub - lb + step - 1) / step;
@@ -2263,7 +2268,7 @@ Optional<Value> AffineForOp::getSingleInductionVar() {
 
 Optional<OpFoldResult> AffineForOp::getSingleLowerBound() {
   if (!hasConstantLowerBound())
-    return llvm::None;
+    return std::nullopt;
   OpBuilder b(getContext());
   return OpFoldResult(b.getI64IntegerAttr(getConstantLowerBound()));
 }
@@ -2275,7 +2280,7 @@ Optional<OpFoldResult> AffineForOp::getSingleStep() {
 
 Optional<OpFoldResult> AffineForOp::getSingleUpperBound() {
   if (!hasConstantUpperBound())
-    return llvm::None;
+    return std::nullopt;
   OpBuilder b(getContext());
   return OpFoldResult(b.getI64IntegerAttr(getConstantUpperBound()));
 }
@@ -2316,6 +2321,19 @@ void mlir::extractForInductionVars(ArrayRef<AffineForOp> forInsts,
   ivs->reserve(forInsts.size());
   for (auto forInst : forInsts)
     ivs->push_back(forInst.getInductionVar());
+}
+
+void mlir::extractInductionVars(ArrayRef<mlir::Operation *> affineOps,
+                                SmallVectorImpl<mlir::Value> &ivs) {
+  ivs.reserve(affineOps.size());
+  for (Operation *op : affineOps) {
+    // Add constraints from forOp's bounds.
+    if (auto forOp = dyn_cast<AffineForOp>(op))
+      ivs.push_back(forOp.getInductionVar());
+    else if (auto parallelOp = dyn_cast<AffineParallelOp>(op))
+      for (size_t i = 0; i < parallelOp.getBody()->getNumArguments(); i++)
+        ivs.push_back(parallelOp.getBody()->getArgument(i));
+  }
 }
 
 /// Builds an affine loop nest, using "loopCreatorFn" to create individual loop
@@ -2365,8 +2383,8 @@ static AffineForOp
 buildAffineLoopFromConstants(OpBuilder &builder, Location loc, int64_t lb,
                              int64_t ub, int64_t step,
                              AffineForOp::BodyBuilderFn bodyBuilderFn) {
-  return builder.create<AffineForOp>(loc, lb, ub, step, /*iterArgs=*/llvm::None,
-                                     bodyBuilderFn);
+  return builder.create<AffineForOp>(loc, lb, ub, step,
+                                     /*iterArgs=*/std::nullopt, bodyBuilderFn);
 }
 
 /// Creates an affine loop from the bounds that may or may not be constants.
@@ -2381,7 +2399,7 @@ buildAffineLoopFromValues(OpBuilder &builder, Location loc, Value lb, Value ub,
                                         ubConst.value(), step, bodyBuilderFn);
   return builder.create<AffineForOp>(loc, lb, builder.getDimIdentityMap(), ub,
                                      builder.getDimIdentityMap(), step,
-                                     /*iterArgs=*/llvm::None, bodyBuilderFn);
+                                     /*iterArgs=*/std::nullopt, bodyBuilderFn);
 }
 
 void mlir::buildAffineLoopNest(
@@ -3551,7 +3569,7 @@ AffineValueMap AffineParallelOp::getUpperBoundsValueMap() {
 
 Optional<SmallVector<int64_t, 8>> AffineParallelOp::getConstantRanges() {
   if (hasMinMaxBounds())
-    return llvm::None;
+    return std::nullopt;
 
   // Try to convert all the ranges to constant expressions.
   SmallVector<int64_t, 8> out;
@@ -3563,7 +3581,7 @@ Optional<SmallVector<int64_t, 8>> AffineParallelOp::getConstantRanges() {
     auto expr = rangesValueMap.getResult(i);
     auto cst = expr.dyn_cast<AffineConstantExpr>();
     if (!cst)
-      return llvm::None;
+      return std::nullopt;
     out.push_back(cst.getValue());
   }
   return out;

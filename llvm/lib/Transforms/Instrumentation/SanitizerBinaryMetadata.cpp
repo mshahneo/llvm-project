@@ -156,10 +156,6 @@ private:
   // Get start/end section marker pointer.
   GlobalVariable *getSectionMarker(const Twine &MarkerName, Type *Ty);
 
-  // Create a 0-sized object in a section, so that the section is not discarded
-  // if all inputs have been discarded.
-  void createZeroSizedObjectInSection(Type *Ty, StringRef SectionSuffix);
-
   // Returns the target-dependent section name.
   StringRef getSectionName(StringRef SectionSuffix);
 
@@ -222,7 +218,6 @@ bool SanitizerBinaryMetadata::run() {
     }
     appendToGlobalCtors(Mod, Ctor, kCtorDtorPriority, CtorData);
     appendToGlobalDtors(Mod, Dtor, kCtorDtorPriority, DtorData);
-    createZeroSizedObjectInSection(Int8PtrTy, MI->SectionSuffix);
   }
 
   return true;
@@ -255,8 +250,10 @@ void SanitizerBinaryMetadata::runOn(Function &F, MetadataInfoSet &MIS) {
 
   if (F.isVarArg())
     FeatureMask &= ~kSanitizerBinaryMetadataUAR;
-  if (FeatureMask & kSanitizerBinaryMetadataUAR)
+  if (FeatureMask & kSanitizerBinaryMetadataUAR) {
+    RequiresCovered = true;
     NumMetadataUAR++;
+  }
 
   // Covered metadata is always emitted if explicitly requested, otherwise only
   // if some other metadata requires it to unambiguously interpret it for
@@ -274,23 +271,50 @@ void SanitizerBinaryMetadata::runOn(Function &F, MetadataInfoSet &MIS) {
   }
 }
 
+bool hasUseAfterReturnUnsafeUses(Value &V) {
+  for (User *U : V.users()) {
+    if (auto *I = dyn_cast<Instruction>(U)) {
+      if (I->isLifetimeStartOrEnd() || I->isDroppable())
+        continue;
+      if (isa<LoadInst>(U))
+        continue;
+      if (auto *SI = dyn_cast<StoreInst>(U)) {
+        // If storing TO the alloca, then the address isn't taken.
+        if (SI->getOperand(1) == &V)
+          continue;
+      }
+      if (auto *GEPI = dyn_cast<GetElementPtrInst>(U)) {
+        if (!hasUseAfterReturnUnsafeUses(*GEPI))
+          continue;
+      } else if (auto *BCI = dyn_cast<BitCastInst>(U)) {
+        if (!hasUseAfterReturnUnsafeUses(*BCI))
+          continue;
+      }
+    }
+    return true;
+  }
+  return false;
+}
+
+bool useAfterReturnUnsafe(Instruction &I) {
+  if (isa<AllocaInst>(I))
+    return hasUseAfterReturnUnsafeUses(I);
+  // Tail-called functions are not necessary intercepted
+  // at runtime because there is no call instruction.
+  // So conservatively mark the caller as requiring checking.
+  else if (auto *CI = dyn_cast<CallInst>(&I))
+    return CI->isTailCall();
+  return false;
+}
+
 bool SanitizerBinaryMetadata::runOn(Instruction &I, MetadataInfoSet &MIS,
                                     MDBuilder &MDB, uint32_t &FeatureMask) {
   SmallVector<const MetadataInfo *, 1> InstMetadata;
   bool RequiresCovered = false;
 
-  if (Options.UAR) {
-    for (unsigned i = 0; i < I.getNumOperands(); ++i) {
-      const Value *V = I.getOperand(i);
-      // TODO(dvyukov): check if V is an address of alloca/function arg.
-      // See isSafeAndProfitableToSinkLoad for addr-taken allocas
-      // and DeadArgumentEliminationPass::removeDeadStuffFromFunction
-      // for iteration over function args.
-      if (V) {
-        RequiresCovered = true;
-        FeatureMask |= kSanitizerBinaryMetadataUAR;
-      }
-    }
+  if (Options.UAR && !(FeatureMask & kSanitizerBinaryMetadataUAR)) {
+    if (useAfterReturnUnsafe(I))
+      FeatureMask |= kSanitizerBinaryMetadataUAR;
   }
 
   if (Options.Atomics && I.mayReadOrWriteMemory()) {
@@ -316,25 +340,13 @@ bool SanitizerBinaryMetadata::runOn(Instruction &I, MetadataInfoSet &MIS,
 
 GlobalVariable *
 SanitizerBinaryMetadata::getSectionMarker(const Twine &MarkerName, Type *Ty) {
+  // Use ExternalWeak so that if all sections are discarded due to section
+  // garbage collection, the linker will not report undefined symbol errors.
   auto *Marker = new GlobalVariable(Mod, Ty, /*isConstant=*/false,
-                                    GlobalVariable::ExternalLinkage,
+                                    GlobalVariable::ExternalWeakLinkage,
                                     /*Initializer=*/nullptr, MarkerName);
   Marker->setVisibility(GlobalValue::HiddenVisibility);
   return Marker;
-}
-
-void SanitizerBinaryMetadata::createZeroSizedObjectInSection(
-    Type *Ty, StringRef SectionSuffix) {
-  auto *DummyInit = ConstantAggregateZero::get(ArrayType::get(Ty, 0));
-  auto *DummyEntry = new GlobalVariable(Mod, DummyInit->getType(), true,
-                                        GlobalVariable::ExternalLinkage,
-                                        DummyInit, "__dummy_" + SectionSuffix);
-  DummyEntry->setSection(getSectionName(SectionSuffix));
-  DummyEntry->setVisibility(GlobalValue::HiddenVisibility);
-  if (TargetTriple.supportsCOMDAT())
-    DummyEntry->setComdat(Mod.getOrInsertComdat(DummyEntry->getName()));
-  // Make sure the section isn't discarded by gc-sections.
-  appendToUsed(Mod, DummyEntry);
 }
 
 StringRef SanitizerBinaryMetadata::getSectionName(StringRef SectionSuffix) {

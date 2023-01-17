@@ -14,7 +14,6 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
-#include "llvm/ADT/None.h"
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallString.h"
@@ -1013,8 +1012,8 @@ bool InMemoryFileSystem::addHardLink(const Twine &NewLink,
   // before. Resolved ToPath must be a File.
   if (!TargetNode || NewLinkNode || !isa<detail::InMemoryFile>(*TargetNode))
     return false;
-  return addFile(NewLink, 0, nullptr, None, None, None, None,
-                 [&](detail::NewInMemoryNodeInfo NNI) {
+  return addFile(NewLink, 0, nullptr, std::nullopt, std::nullopt, std::nullopt,
+                 std::nullopt, [&](detail::NewInMemoryNodeInfo NNI) {
                    return std::make_unique<detail::InMemoryHardLink>(
                        NNI.Path.str(),
                        *cast<detail::InMemoryFile>(*TargetNode));
@@ -1506,6 +1505,7 @@ void RedirectingFileSystem::setRedirection(
 
 std::vector<StringRef> RedirectingFileSystem::getRoots() const {
   std::vector<StringRef> R;
+  R.reserve(Roots.size());
   for (const auto &Root : Roots)
     R.push_back(Root->getName());
   return R;
@@ -1610,7 +1610,7 @@ class llvm::vfs::RedirectingFileSystemParser {
     SmallString<12> Storage;
     StringRef Value;
     if (!parseScalarString(N, Value, Storage))
-      return None;
+      return std::nullopt;
 
     if (Value.equals_insensitive("fallthrough")) {
       return RedirectingFileSystem::RedirectKind::Fallthrough;
@@ -1619,7 +1619,7 @@ class llvm::vfs::RedirectingFileSystemParser {
     } else if (Value.equals_insensitive("redirect-only")) {
       return RedirectingFileSystem::RedirectKind::RedirectOnly;
     }
-    return None;
+    return std::nullopt;
   }
 
   struct KeyStatus {

@@ -17,7 +17,6 @@
 #include "Utils/ARMBaseInfo.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APInt.h"
-#include "llvm/ADT/None.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/SmallVector.h"
@@ -429,15 +428,15 @@ class ARMAsmParser : public MCTargetAsmParser {
       VPTState.CurPosition = ~0U;
   }
 
-  void Note(SMLoc L, const Twine &Msg, SMRange Range = None) {
+  void Note(SMLoc L, const Twine &Msg, SMRange Range = std::nullopt) {
     return getParser().Note(L, Msg, Range);
   }
 
-  bool Warning(SMLoc L, const Twine &Msg, SMRange Range = None) {
+  bool Warning(SMLoc L, const Twine &Msg, SMRange Range = std::nullopt) {
     return getParser().Warning(L, Msg, Range);
   }
 
-  bool Error(SMLoc L, const Twine &Msg, SMRange Range = None) {
+  bool Error(SMLoc L, const Twine &Msg, SMRange Range = std::nullopt) {
     return getParser().Error(L, Msg, Range);
   }
 
@@ -11399,7 +11398,7 @@ bool ARMAsmParser::parseDirectiveEabiAttr(SMLoc L) {
   TagLoc = Parser.getTok().getLoc();
   if (Parser.getTok().is(AsmToken::Identifier)) {
     StringRef Name = Parser.getTok().getIdentifier();
-    Optional<unsigned> Ret = ELFAttrs::attrTypeFromString(
+    std::optional<unsigned> Ret = ELFAttrs::attrTypeFromString(
         Name, ARMBuildAttrs::getARMAttributeTags());
     if (!Ret) {
       Error(TagLoc, "attribute name not recognised: " + Name);
