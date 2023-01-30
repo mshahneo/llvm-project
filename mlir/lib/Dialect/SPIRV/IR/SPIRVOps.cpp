@@ -2228,15 +2228,17 @@ LogicalResult spirv::ConvertUToFOp::verify() {
 LogicalResult spirv::INTELConvertBF16ToFOp::verify() {
   auto operandType = getOperand().getType();
   auto resultType = getResult().getType();
-  // ODS checks that result type and operand type have the same shape.
+  // ODS checks that vector result type and vector operand type have the same
+  // shape.
   if (auto vectorType = operandType.dyn_cast<VectorType>()) {
     unsigned operandNumElements = vectorType.getNumElements();
     unsigned resultNumElements = resultType.cast<VectorType>().getNumElements();
-    if (operandNumElements == resultNumElements) {
-      return success();
-    }   
+    if (operandNumElements != resultNumElements) {
+      return emitOpError(
+          "operand and result must have same number of elements");
+    }
   }
-  return failure();
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -2246,15 +2248,17 @@ LogicalResult spirv::INTELConvertBF16ToFOp::verify() {
 LogicalResult spirv::INTELConvertFToBF16Op::verify() {
   auto operandType = getOperand().getType();
   auto resultType = getResult().getType();
-  // ODS checks that vector result type and vector operand type have the same shape.
+  // ODS checks that vector result type and vector operand type have the same
+  // shape.
   if (auto vectorType = operandType.dyn_cast<VectorType>()) {
     unsigned operandNumElements = vectorType.getNumElements();
     unsigned resultNumElements = resultType.cast<VectorType>().getNumElements();
-    if (operandNumElements == resultNumElements) {
-      return success();
-    }    
+    if (operandNumElements != resultNumElements) {
+      return emitOpError(
+          "operand and result must have same number of elements");
+    }
   }
-  return failure();
+  return success();
 }
 
 //===----------------------------------------------------------------------===//

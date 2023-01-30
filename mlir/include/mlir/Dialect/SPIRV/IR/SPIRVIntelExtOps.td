@@ -19,8 +19,7 @@
 
 // -----
 
-def SPIRV_INTELConvertFToBF16Op : SPIRV_IntelVendorOp<"ConvertFToBF16",
-  [Pure]> {
+def SPIRV_INTELConvertFToBF16Op : SPIRV_IntelVendorOp<"ConvertFToBF16", []> {
   let summary = "See extension SPV_INTEL_bfloat16_conversion";
 
   let description = [{
@@ -75,8 +74,7 @@ def SPIRV_INTELConvertFToBF16Op : SPIRV_IntelVendorOp<"ConvertFToBF16",
 
 // -----
 
-def SPIRV_INTELConvertBF16ToFOp : SPIRV_IntelVendorOp<"ConvertBF16ToF",
-  [Pure]> {
+def SPIRV_INTELConvertBF16ToFOp : SPIRV_IntelVendorOp<"ConvertBF16ToF", []> {
   let summary = "See extension SPV_INTEL_bfloat16_conversion";
 
   let description = [{
