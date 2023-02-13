@@ -365,6 +365,8 @@ _mlir_ciface_printMemrefShapeC64(UnrankedMemRefType<impl::complex64> *m);
 extern "C" MLIR_RUNNERUTILS_EXPORT void
 _mlir_ciface_printMemrefI8(UnrankedMemRefType<int8_t> *m);
 extern "C" MLIR_RUNNERUTILS_EXPORT void
+_mlir_ciface_printMemrefI16(UnrankedMemRefType<int16_t> *m);
+extern "C" MLIR_RUNNERUTILS_EXPORT void
 _mlir_ciface_printMemrefI32(UnrankedMemRefType<int32_t> *m);
 extern "C" MLIR_RUNNERUTILS_EXPORT void
 _mlir_ciface_printMemrefI64(UnrankedMemRefType<int64_t> *m);
@@ -381,6 +383,7 @@ _mlir_ciface_printMemrefC64(UnrankedMemRefType<impl::complex64> *m);
 
 extern "C" MLIR_RUNNERUTILS_EXPORT int64_t _mlir_ciface_nanoTime();
 
+extern "C" MLIR_RUNNERUTILS_EXPORT void printMemrefI16(int64_t rank, void *ptr);
 extern "C" MLIR_RUNNERUTILS_EXPORT void printMemrefI32(int64_t rank, void *ptr);
 extern "C" MLIR_RUNNERUTILS_EXPORT void printMemrefI64(int64_t rank, void *ptr);
 extern "C" MLIR_RUNNERUTILS_EXPORT void printMemrefF32(int64_t rank, void *ptr);
