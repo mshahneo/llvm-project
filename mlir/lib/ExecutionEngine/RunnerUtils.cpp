@@ -81,6 +81,10 @@ extern "C" void _mlir_ciface_printMemrefI8(UnrankedMemRefType<int8_t> *M) {
   impl::printMemRef(*M);
 }
 
+extern "C" void _mlir_ciface_printMemrefI16(UnrankedMemRefType<int16_t> *M) {
+  impl::printMemRef(*M);
+}
+
 extern "C" void _mlir_ciface_printMemrefI32(UnrankedMemRefType<int32_t> *M) {
   impl::printMemRef(*M);
 }
