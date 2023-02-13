@@ -261,6 +261,15 @@ LogicalResult spirv::Deserializer::processDecoration(ArrayRef<uint32_t> words) {
         symbol, opBuilder.getStringAttr(
                     stringifyBuiltIn(static_cast<spirv::BuiltIn>(words[2]))));
     break;
+  case spirv::Decoration::FuncParamAttr:
+  if (words.size() != 3) {
+      return emitError(unknownLoc, "OpDecorate with ")
+             << decorationName << " needs a single integer literal";
+    }
+    decorations[words[0]].set(
+        symbol, opBuilder.getStringAttr(
+                    stringifyFunctionParameterAttribute(static_cast<spirv::FunctionParameterAttribute>(words[2]))));
+    break;
   case spirv::Decoration::ArrayStride:
     if (words.size() != 3) {
       return emitError(unknownLoc, "OpDecorate with ")
@@ -293,6 +302,7 @@ LogicalResult spirv::Deserializer::processDecoration(ArrayRef<uint32_t> words) {
   case spirv::Decoration::Aliased:
   case spirv::Decoration::Block:
   case spirv::Decoration::BufferBlock:
+  case spirv::Decoration::Constant:
   case spirv::Decoration::Flat:
   case spirv::Decoration::NonReadable:
   case spirv::Decoration::NonWritable:
@@ -318,6 +328,7 @@ LogicalResult spirv::Deserializer::processDecoration(ArrayRef<uint32_t> words) {
   case spirv::Decoration::Alignment:
   case spirv::Decoration::FuncParamIOKindINTEL:
   case spirv::Decoration::Location:
+  case spirv::Decoration::MaxByteOffset:
   case spirv::Decoration::SpecId:
     if (words.size() != 3) {
       return emitError(unknownLoc, "OpDecoration with ")

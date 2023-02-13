@@ -244,6 +244,7 @@ LogicalResult Serializer::processDecoration(Location loc, uint32_t resultID,
   case spirv::Decoration::DescriptorSet:
   case spirv::Decoration::FuncParamIOKindINTEL:
   case spirv::Decoration::Location:
+  case spirv::Decoration::MaxByteOffset:
     if (auto intAttr = attr.getValue().dyn_cast<IntegerAttr>()) {
       args.push_back(intAttr.getValue().getZExtValue());
       break;
@@ -260,7 +261,22 @@ LogicalResult Serializer::processDecoration(Location loc, uint32_t resultID,
              << attrName << " attribute " << strAttr.getValue();
     }
     return emitError(loc, "expected string attribute for ") << attrName;
+  case spirv::Decoration::FuncParamAttr:
+  if (auto strAttr = attr.getValue().dyn_cast<StringAttr>()) {
+      auto enumVal = spirv::symbolizeEnum<spirv::FunctionParameterAttribute>(strAttr.getValue());
+      // auto enumVal = spirv::symbolizeEnum<spirv::FunctionParameterAttribute>(
+      //       strAttr.getValue())
+      //       .value());
+      if (enumVal) {
+        args.push_back(static_cast<uint32_t>(*enumVal));
+        break;
+      }
+      return emitError(loc, "invalid ")
+             << attrName << " attribute " << strAttr.getValue();
+    }
+    return emitError(loc, "expected string attribute for ") << attrName;
   case spirv::Decoration::Aliased:
+  case spirv::Decoration::Constant:
   case spirv::Decoration::Flat:
   case spirv::Decoration::NonReadable:
   case spirv::Decoration::NonWritable:
