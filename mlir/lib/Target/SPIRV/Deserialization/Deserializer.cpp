@@ -241,6 +241,8 @@ LogicalResult spirv::Deserializer::processDecoration(ArrayRef<uint32_t> words) {
   }
   // TODO: why do we need to convertToSnakeFromCamelCase? Any
   // specific reason?
+  // TODO: why do we need to convertToSnakeFromCamelCase? Any
+  // specific reason?
   auto attrName = llvm::convertToSnakeFromCamelCase(decorationName);
   auto symbol = opBuilder.getStringAttr(attrName);
   switch (static_cast<spirv::Decoration>(words[1])) {
