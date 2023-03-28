@@ -267,6 +267,28 @@ LogicalResult spirv::Deserializer::processDecoration(ArrayRef<uint32_t> words) {
     }
     typeDecorations[words[0]] = words[2];
     break;
+  case spirv::Decoration::LinkageAttributes: {
+    if (words.size() < 4) {
+      return emitError(unknownLoc, "OpDecorate with ")
+             << decorationName
+             << " needs at least 1 string and 1 integer literal";
+    }
+    // LinkageAttributes has two parameters ["Name", "LinkageType"]
+    // e.g., OpDecorate %imported_func LinkageAttributes "outside.func" Import
+    // "name" is a stringliteral encoded as uint32_t,
+    // hence the size of name is variable length which results in words.size()
+    // being variable length, words.size() = 3 + strlen(name)/4 + 1
+    // uint32_t linkageNameLen = words.size() - 3;
+    unsigned wordIndex = 2;
+    StringRef linkageName = spirv::decodeStringLiteral(words, wordIndex);
+    std::vector<mlir::Attribute> attrElements;
+    attrElements.push_back(opBuilder.getStringAttr(linkageName));
+    attrElements.push_back(opBuilder.getStringAttr(stringifyLinkageType(
+        static_cast<spirv::LinkageType>(words[words.size() - 1]))));
+    ArrayAttr linkageAttrVal = opBuilder.getArrayAttr(attrElements);
+    decorations[words[0]].set(symbol, linkageAttrVal.dyn_cast<Attribute>());
+    break;
+  }
   case spirv::Decoration::Aliased:
   case spirv::Decoration::Block:
   case spirv::Decoration::BufferBlock:
@@ -274,8 +296,14 @@ LogicalResult spirv::Deserializer::processDecoration(ArrayRef<uint32_t> words) {
   case spirv::Decoration::NonReadable:
   case spirv::Decoration::NonWritable:
   case spirv::Decoration::NoPerspective:
+  case spirv::Decoration::NoSignedWrap:
+  case spirv::Decoration::NoUnsignedWrap:
   case spirv::Decoration::Restrict:
   case spirv::Decoration::RelaxedPrecision:
+  case spirv::Decoration::SingleElementVectorINTEL:
+  case spirv::Decoration::VectorComputeCallableFunctionINTEL:
+  case spirv::Decoration::VectorComputeFunctionINTEL:
+  case spirv::Decoration::VectorComputeVariableINTEL:
     if (words.size() != 2) {
       return emitError(unknownLoc, "OpDecoration with ")
              << decorationName << "needs a single target <id>";
@@ -286,6 +314,8 @@ LogicalResult spirv::Deserializer::processDecoration(ArrayRef<uint32_t> words) {
     // it is needed for many validation rules.
     decorations[words[0]].set(symbol, opBuilder.getUnitAttr());
     break;
+  case spirv::Decoration::Alignment:
+  case spirv::Decoration::FuncParamIOKindINTEL:
   case spirv::Decoration::Location:
   case spirv::Decoration::SpecId:
     if (words.size() != 3) {
@@ -339,6 +369,7 @@ LogicalResult spirv::Deserializer::processMemberName(ArrayRef<uint32_t> words) {
 
 LogicalResult
 spirv::Deserializer::processFunction(ArrayRef<uint32_t> operands) {
+  bool isImportedFunc = false;
   if (curFunction) {
     return emitError(unknownLoc, "found function inside function");
   }
@@ -380,6 +411,18 @@ spirv::Deserializer::processFunction(ArrayRef<uint32_t> operands) {
   std::string fnName = getFunctionSymbol(fnID);
   auto funcOp = opBuilder.create<spirv::FuncOp>(
       unknownLoc, fnName, functionType, fnControl.value());
+  // Processing other function attributes
+  if (decorations.count(fnID)) {
+    for (auto attr : decorations[fnID].getAttrs()) {
+      funcOp->setAttr(attr.getName(), attr.getValue());
+      if (attr.getName() == "linkage_attributes" &&
+          (attr.getValue()
+               .dyn_cast<ArrayAttr>()[1]
+               .dyn_cast<StringAttr>()
+               .strref() == "Import"))
+        isImportedFunc = true;
+    }
+  }
   curFunction = funcMap[fnID] = funcOp;
   auto *entryBlock = funcOp.addEntryBlock();
   LLVM_DEBUG({
@@ -430,6 +473,17 @@ spirv::Deserializer::processFunction(ArrayRef<uint32_t> operands) {
     }
   }
 
+  // entryBlock is needed to access the arguments, Once that is done, we can
+  // erase the block for functions with LinkageAttributes, since these are
+  // essentially function declarations, so they have no body
+  // if (attr.getValue()
+  //         .dyn_cast<ArrayAttr>()[1]
+  //         .dyn_cast<StringAttr>()
+  //         .strref() == "Import") {
+  //   llvm::errs() << funcOp->getName() << "\n";
+  // }
+  if (isImportedFunc)
+    funcOp.eraseBody();
   // RAII guard to reset the insertion point to the module's region after
   // deserializing the body of this function.
   OpBuilder::InsertionGuard moduleInsertionGuard(opBuilder);
