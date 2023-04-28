@@ -1426,6 +1426,12 @@ def SPIRV_C_JointMatrixINTEL                         : I32EnumAttrCase<"JointMat
   ];
 }
 
+def SPIRV_C_Bfloat16ConversionINTEL                         : I32EnumAttrCase<"Bfloat16ConversionINTEL", 6115> {
+  list<Availability> availability = [
+    Extension<[SPV_INTEL_bfloat16_conversion]>
+  ];
+}
+
 def SPIRV_CapabilityAttr :
     SPIRV_I32EnumAttr<"Capability", "valid SPIR-V Capability", "capability", [
       SPIRV_C_Matrix, SPIRV_C_Addresses, SPIRV_C_Linkage, SPIRV_C_Kernel, SPIRV_C_Float16,
