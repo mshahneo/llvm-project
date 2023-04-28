@@ -400,6 +400,7 @@ def SPV_INTEL_memory_access_aliasing             : I32EnumAttrCase<"SPV_INTEL_me
 def SPV_INTEL_split_barrier                      : I32EnumAttrCase<"SPV_INTEL_split_barrier", 4029>;
 def SPV_INTEL_joint_matrix                       : I32EnumAttrCase<"SPV_INTEL_joint_matrix", 4030>;
 def SPV_INTEL_bfloat16_conversion                : I32EnumAttrCase<"SPV_INTEL_bfloat16_conversion", 4031>;
+def SPV_INTEL_runtime_aligned                : I32EnumAttrCase<"SPV_INTEL_runtime_aligned", 4032>;
 
 def SPV_NV_compute_shader_derivatives    : I32EnumAttrCase<"SPV_NV_compute_shader_derivatives", 5000>;
 def SPV_NV_cooperative_matrix            : I32EnumAttrCase<"SPV_NV_cooperative_matrix", 5001>;
@@ -787,6 +788,11 @@ def SPIRV_C_ArbitraryPrecisionFixedPointINTEL           : I32EnumAttrCase<"Arbit
 def SPIRV_C_USMStorageClassesINTEL                      : I32EnumAttrCase<"USMStorageClassesINTEL", 5935> {
   list<Availability> availability = [
     Extension<[SPV_INTEL_usm_storage_classes]>
+  ];
+}
+def SPIRV_C_RuntimeAlignedAttributeINTEL                      : I32EnumAttrCase<"RuntimeAlignedAttributeINTEL", 5939> {
+  list<Availability> availability = [
+    Extension<[SPV_INTEL_runtime_aligned]>
   ];
 }
 def SPIRV_C_IOPipesINTEL                                : I32EnumAttrCase<"IOPipesINTEL", 5943> {
@@ -1408,15 +1414,15 @@ def SPIRV_C_ShaderStereoViewNV                          : I32EnumAttrCase<"Shade
   ];
 }
 
-def SPIRV_C_JointMatrixINTEL                         : I32EnumAttrCase<"JointMatrixINTEL", 6118> {
-  list<Availability> availability = [
-    Extension<[SPV_INTEL_joint_matrix]>
-  ];
-}
-
 def SPIRV_C_Bfloat16ConversionINTEL                         : I32EnumAttrCase<"Bfloat16ConversionINTEL", 6115> {
   list<Availability> availability = [
     Extension<[SPV_INTEL_bfloat16_conversion]>
+  ];
+}
+
+def SPIRV_C_JointMatrixINTEL                         : I32EnumAttrCase<"JointMatrixINTEL", 6118> {
+  list<Availability> availability = [
+    Extension<[SPV_INTEL_joint_matrix]>
   ];
 }
 
@@ -1511,7 +1517,8 @@ def SPIRV_CapabilityAttr :
       SPIRV_C_UniformTexelBufferArrayNonUniformIndexing,
       SPIRV_C_StorageTexelBufferArrayNonUniformIndexing,
       SPIRV_C_ShaderViewportIndexLayerEXT, SPIRV_C_ShaderViewportMaskNV,
-      SPIRV_C_ShaderStereoViewNV, SPIRV_C_JointMatrixINTEL, SPIRV_C_Bfloat16ConversionINTEL
+      SPIRV_C_ShaderStereoViewNV, SPIRV_C_JointMatrixINTEL, 
+      SPIRV_C_Bfloat16ConversionINTEL, SPIRV_C_RuntimeAlignedAttributeINTEL
     ]>;
 
 def SPIRV_AM_Logical                 : I32EnumAttrCase<"Logical", 0>;
@@ -4034,17 +4041,17 @@ def SPIRV_FPA_NoReadWrite         : I32EnumAttrCase<"NoReadWrite", 7> {
     Capability<[SPIRV_C_Kernel]>
   ];
 }
-// def SPIRV_FPA_RuntimeAlignedINTEL : I32EnumAttrCase<"RuntimeAlignedINTEL", 5940> {
-//   list<Availability> availability = [
-//     Capability<[SPIRV_C_RuntimeAlignedAttributeINTEL]>
-//   ];
-// }
+def SPIRV_FPA_RuntimeAlignedINTEL : I32EnumAttrCase<"RuntimeAlignedINTEL", 5940> {
+  list<Availability> availability = [
+    Capability<[SPIRV_C_RuntimeAlignedAttributeINTEL]>
+  ];
+}
 
 def SPIRV_FunctionParameterAttributeAttr :
     SPIRV_I32EnumAttr<"FunctionParameterAttribute", "valid SPIR-V FunctionParameterAttribute", "function_parameter_attribute", [
       SPIRV_FPA_Zext, SPIRV_FPA_Sext, SPIRV_FPA_ByVal, SPIRV_FPA_Sret,
       SPIRV_FPA_NoAlias, SPIRV_FPA_NoCapture, SPIRV_FPA_NoWrite,
-      SPIRV_FPA_NoReadWrite //, SPIRV_FPA_RuntimeAlignedINTEL
+      SPIRV_FPA_NoReadWrite , SPIRV_FPA_RuntimeAlignedINTEL
     ]>;
 
 // End enum section. Generated from SPIR-V spec; DO NOT MODIFY!
@@ -4324,6 +4331,8 @@ def SPIRV_OC_OpConvertUToF                : I32EnumAttrCase<"OpConvertUToF", 112
 def SPIRV_OC_OpUConvert                   : I32EnumAttrCase<"OpUConvert", 113>;
 def SPIRV_OC_OpSConvert                   : I32EnumAttrCase<"OpSConvert", 114>;
 def SPIRV_OC_OpFConvert                   : I32EnumAttrCase<"OpFConvert", 115>;
+def SPIRV_OC_OpConvertPtrToU              : I32EnumAttrCase<"OpConvertPtrToU", 117>;
+def SPIRV_OC_OpConvertUToPtr              : I32EnumAttrCase<"OpConvertUToPtr", 120>;
 def SPIRV_OC_OpPtrCastToGeneric           : I32EnumAttrCase<"OpPtrCastToGeneric", 121>;
 def SPIRV_OC_OpGenericCastToPtr           : I32EnumAttrCase<"OpGenericCastToPtr", 122>;
 def SPIRV_OC_OpGenericCastToPtrExplicit   : I32EnumAttrCase<"OpGenericCastToPtrExplicit", 123>;
@@ -4420,6 +4429,8 @@ def SPIRV_OC_OpBranchConditional          : I32EnumAttrCase<"OpBranchConditional
 def SPIRV_OC_OpReturn                     : I32EnumAttrCase<"OpReturn", 253>;
 def SPIRV_OC_OpReturnValue                : I32EnumAttrCase<"OpReturnValue", 254>;
 def SPIRV_OC_OpUnreachable                : I32EnumAttrCase<"OpUnreachable", 255>;
+def SPIRV_OC_OpLifetimeStart              : I32EnumAttrCase<"OpLifetimeStart", 256>;
+def SPIRV_OC_OpLifetimeStop               : I32EnumAttrCase<"OpLifetimeStop", 257>;
 def SPIRV_OC_OpGroupBroadcast             : I32EnumAttrCase<"OpGroupBroadcast", 263>;
 def SPIRV_OC_OpGroupIAdd                  : I32EnumAttrCase<"OpGroupIAdd", 264>;
 def SPIRV_OC_OpGroupFAdd                  : I32EnumAttrCase<"OpGroupFAdd", 265>;
@@ -4504,6 +4515,7 @@ def SPIRV_OpcodeAttr :
       SPIRV_OC_OpImage, SPIRV_OC_OpImageQuerySize, SPIRV_OC_OpConvertFToU,
       SPIRV_OC_OpConvertFToS, SPIRV_OC_OpConvertSToF, SPIRV_OC_OpConvertUToF,
       SPIRV_OC_OpUConvert, SPIRV_OC_OpSConvert, SPIRV_OC_OpFConvert,
+      SPIRV_OC_OpConvertPtrToU, SPIRV_OC_OpConvertUToPtr,
       SPIRV_OC_OpPtrCastToGeneric, SPIRV_OC_OpGenericCastToPtr,
       SPIRV_OC_OpGenericCastToPtrExplicit, SPIRV_OC_OpBitcast, SPIRV_OC_OpSNegate,
       SPIRV_OC_OpFNegate, SPIRV_OC_OpIAdd, SPIRV_OC_OpFAdd, SPIRV_OC_OpISub,
@@ -4538,26 +4550,27 @@ def SPIRV_OpcodeAttr :
       SPIRV_OC_OpPhi, SPIRV_OC_OpLoopMerge, SPIRV_OC_OpSelectionMerge,
       SPIRV_OC_OpLabel, SPIRV_OC_OpBranch, SPIRV_OC_OpBranchConditional,
       SPIRV_OC_OpReturn, SPIRV_OC_OpReturnValue, SPIRV_OC_OpUnreachable,
-      SPIRV_OC_OpGroupBroadcast, SPIRV_OC_OpGroupIAdd, SPIRV_OC_OpGroupFAdd,
-      SPIRV_OC_OpGroupFMin, SPIRV_OC_OpGroupUMin, SPIRV_OC_OpGroupSMin,
-      SPIRV_OC_OpGroupFMax, SPIRV_OC_OpGroupUMax, SPIRV_OC_OpGroupSMax,
-      SPIRV_OC_OpNoLine, SPIRV_OC_OpModuleProcessed, SPIRV_OC_OpGroupNonUniformElect,
-      SPIRV_OC_OpGroupNonUniformBroadcast, SPIRV_OC_OpGroupNonUniformBallot,
-      SPIRV_OC_OpGroupNonUniformShuffle, SPIRV_OC_OpGroupNonUniformShuffleXor,
-      SPIRV_OC_OpGroupNonUniformShuffleUp, SPIRV_OC_OpGroupNonUniformShuffleDown,
-      SPIRV_OC_OpGroupNonUniformIAdd, SPIRV_OC_OpGroupNonUniformFAdd,
-      SPIRV_OC_OpGroupNonUniformIMul, SPIRV_OC_OpGroupNonUniformFMul,
-      SPIRV_OC_OpGroupNonUniformSMin, SPIRV_OC_OpGroupNonUniformUMin,
-      SPIRV_OC_OpGroupNonUniformFMin, SPIRV_OC_OpGroupNonUniformSMax,
-      SPIRV_OC_OpGroupNonUniformUMax, SPIRV_OC_OpGroupNonUniformFMax,
-      SPIRV_OC_OpSubgroupBallotKHR, SPIRV_OC_OpSDot, SPIRV_OC_OpUDot,
-      SPIRV_OC_OpSUDot, SPIRV_OC_OpSDotAccSat, SPIRV_OC_OpUDotAccSat,
-      SPIRV_OC_OpSUDotAccSat, SPIRV_OC_OpTypeCooperativeMatrixNV,
-      SPIRV_OC_OpCooperativeMatrixLoadNV, SPIRV_OC_OpCooperativeMatrixStoreNV,
-      SPIRV_OC_OpCooperativeMatrixMulAddNV, SPIRV_OC_OpCooperativeMatrixLengthNV,
-      SPIRV_OC_OpSubgroupBlockReadINTEL, SPIRV_OC_OpSubgroupBlockWriteINTEL,
-      SPIRV_OC_OpAssumeTrueKHR, SPIRV_OC_OpAtomicFAddEXT, SPIRV_OC_OpGroupIMulKHR,
-      SPIRV_OC_OpGroupFMulKHR,
+      SPIRV_OC_OpLifetimeStart, SPIRV_OC_OpLifetimeStop,
+      SPIRV_OC_OpGroupBroadcast, SPIRV_OC_OpGroupIAdd,
+      SPIRV_OC_OpGroupFAdd, SPIRV_OC_OpGroupFMin, SPIRV_OC_OpGroupUMin,
+      SPIRV_OC_OpGroupSMin, SPIRV_OC_OpGroupFMax, SPIRV_OC_OpGroupUMax,
+      SPIRV_OC_OpGroupSMax, SPIRV_OC_OpNoLine, SPIRV_OC_OpModuleProcessed,
+      SPIRV_OC_OpGroupNonUniformElect, SPIRV_OC_OpGroupNonUniformBroadcast,
+      SPIRV_OC_OpGroupNonUniformBallot, SPIRV_OC_OpGroupNonUniformShuffle,
+      SPIRV_OC_OpGroupNonUniformShuffleXor, SPIRV_OC_OpGroupNonUniformShuffleUp,
+      SPIRV_OC_OpGroupNonUniformShuffleDown, SPIRV_OC_OpGroupNonUniformIAdd,
+      SPIRV_OC_OpGroupNonUniformFAdd, SPIRV_OC_OpGroupNonUniformIMul,
+      SPIRV_OC_OpGroupNonUniformFMul, SPIRV_OC_OpGroupNonUniformSMin,
+      SPIRV_OC_OpGroupNonUniformUMin, SPIRV_OC_OpGroupNonUniformFMin,
+      SPIRV_OC_OpGroupNonUniformSMax, SPIRV_OC_OpGroupNonUniformUMax,
+      SPIRV_OC_OpGroupNonUniformFMax, SPIRV_OC_OpSubgroupBallotKHR, SPIRV_OC_OpSDot,
+      SPIRV_OC_OpUDot, SPIRV_OC_OpSUDot, SPIRV_OC_OpSDotAccSat,
+      SPIRV_OC_OpUDotAccSat, SPIRV_OC_OpSUDotAccSat,
+      SPIRV_OC_OpTypeCooperativeMatrixNV, SPIRV_OC_OpCooperativeMatrixLoadNV,
+      SPIRV_OC_OpCooperativeMatrixStoreNV, SPIRV_OC_OpCooperativeMatrixMulAddNV,
+      SPIRV_OC_OpCooperativeMatrixLengthNV, SPIRV_OC_OpSubgroupBlockReadINTEL,
+      SPIRV_OC_OpSubgroupBlockWriteINTEL, SPIRV_OC_OpAssumeTrueKHR,
+      SPIRV_OC_OpAtomicFAddEXT, SPIRV_OC_OpGroupIMulKHR, SPIRV_OC_OpGroupFMulKHR,
 
       SPIRV_OC_OpTypeJointMatrixINTEL, SPIRV_OC_OpJointMatrixLoadINTEL,
       SPIRV_OC_OpJointMatrixStoreINTEL, SPIRV_OC_OpJointMatrixMadINTEL,

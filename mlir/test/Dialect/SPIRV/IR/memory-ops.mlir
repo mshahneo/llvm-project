@@ -490,6 +490,14 @@ func.func @variable(%arg0: f32) -> () {
 
 // -----
 
+func.func @variable(%arg0: f32) -> () {
+  // CHECK: spirv.Variable : !spirv.ptr<f32, Workgroup>
+  %0 = spirv.Variable : !spirv.ptr<f32, Workgroup>
+  return
+}
+
+// -----
+
 func.func @variable_init_normal_constant() -> () {
   // CHECK: %[[cst:.*]] = spirv.Constant
   %0 = spirv.Constant 4.0 : f32

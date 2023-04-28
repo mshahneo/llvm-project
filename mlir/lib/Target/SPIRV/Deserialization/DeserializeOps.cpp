@@ -210,6 +210,9 @@ LogicalResult spirv::Deserializer::processInstruction(
     return processPhi(operands);
   case spirv::Opcode::OpUndef:
     return processUndef(operands);
+  case spirv::Opcode::OpLifetimeStart:
+  case spirv::Opcode::OpLifetimeStop:
+    return success();
   default:
     break;
   }

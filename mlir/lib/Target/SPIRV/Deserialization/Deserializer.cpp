@@ -1517,6 +1517,9 @@ spirv::Deserializer::processConstantNull(ArrayRef<uint32_t> operands) {
     constantMap.try_emplace(resultID, attr, resultType);
     return success();
   }
+  // TODO: We need to handle composite result types
+  // constantMap.try_emplace(resultID, resultType);
+  // return success();
 
   return emitError(unknownLoc, "unsupported OpConstantNull type: ")
          << resultType;

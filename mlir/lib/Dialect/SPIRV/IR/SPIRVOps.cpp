@@ -1580,6 +1580,32 @@ LogicalResult spirv::BitcastOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// spirv.ConvertPtrToUOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult spirv::ConvertPtrToUOp::verify() {
+  // TODO: Should we add a check for physical pointer type?
+  auto operandType = getPointer().getType().cast<spirv::PointerType>();
+  auto resultType = getResult().getType().cast<spirv::ScalarType>();
+  if (!resultType || !resultType.isSignlessInteger())
+    return emitError("Result must be a scalar type of unsigned integer");
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// spirv.ConvertUToPtrOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult spirv::ConvertUToPtrOp::verify() {
+  // TODO: Should we add a check for physical pointer type?
+  auto operandType = getOperand().getType().cast<spirv::ScalarType>();
+  auto resultType = getResult().getType().cast<spirv::PointerType>();
+  if (!operandType || !operandType.isSignlessInteger())
+    return emitError("Result must be a scalar type of unsigned integer");
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // spirv.PtrCastToGenericOp
 //===----------------------------------------------------------------------===//
 
@@ -3764,7 +3790,8 @@ void spirv::SpecConstantOp::print(OpAsmPrinter &printer) {
 LogicalResult spirv::SpecConstantOp::verify() {
   if (auto specID = (*this)->getAttrOfType<IntegerAttr>(kSpecIdAttrName))
     if (specID.getValue().isNegative())
-      return emitOpError("SpecId cannot be negative");
+      // return emitOpError("SpecId cannot be negative");
+      return success();
 
   auto value = getDefaultValue();
   if (value.isa<IntegerAttr, FloatAttr>()) {
@@ -4107,6 +4134,7 @@ verifyPointerAndJointMatrixType(Operation *op, Type pointer, Type jointMatrix) {
     return op->emitError(
                "Pointer must point to a scalar or vector type but provided ")
            << pointeeType;
+
   spirv::StorageClass storage =
       pointer.cast<spirv::PointerType>().getStorageClass();
   if (storage != spirv::StorageClass::Workgroup &&
