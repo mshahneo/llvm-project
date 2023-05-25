@@ -260,6 +260,16 @@ LogicalResult spirv::Deserializer::processDecoration(ArrayRef<uint32_t> words) {
         symbol, opBuilder.getStringAttr(
                     stringifyBuiltIn(static_cast<spirv::BuiltIn>(words[2]))));
     break;
+  case spirv::Decoration::FuncParamAttr:
+    if (words.size() != 3) {
+      return emitError(unknownLoc, "OpDecorate with ")
+             << decorationName << " needs a single integer literal";
+    }
+    decorations[words[0]].set(
+        symbol,
+        opBuilder.getAttr<::mlir::spirv::FunctionParameterAttributeAttr>(
+            static_cast<::mlir::spirv::FunctionParameterAttribute>(words[2])));
+    break;
   case spirv::Decoration::ArrayStride:
     if (words.size() != 3) {
       return emitError(unknownLoc, "OpDecorate with ")

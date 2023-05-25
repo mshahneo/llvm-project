@@ -401,6 +401,7 @@ def SPV_INTEL_memory_access_aliasing             : I32EnumAttrCase<"SPV_INTEL_me
 def SPV_INTEL_split_barrier                      : I32EnumAttrCase<"SPV_INTEL_split_barrier", 4029>;
 def SPV_INTEL_joint_matrix                       : I32EnumAttrCase<"SPV_INTEL_joint_matrix", 4030>;
 def SPV_INTEL_bfloat16_conversion                : I32EnumAttrCase<"SPV_INTEL_bfloat16_conversion", 4031>;
+def SPV_INTEL_runtime_aligned                    : I32EnumAttrCase<"SPV_INTEL_runtime_aligned", 4032>;
 
 def SPV_NV_compute_shader_derivatives    : I32EnumAttrCase<"SPV_NV_compute_shader_derivatives", 5000>;
 def SPV_NV_cooperative_matrix            : I32EnumAttrCase<"SPV_NV_cooperative_matrix", 5001>;
@@ -459,7 +460,8 @@ def SPIRV_ExtensionAttr :
       SPV_INTEL_fpga_reg, SPV_INTEL_long_constant_composite, SPV_INTEL_optnone,
       SPV_INTEL_debug_module, SPV_INTEL_fp_fast_math_mode,
       SPV_INTEL_memory_access_aliasing, SPV_INTEL_split_barrier, SPV_INTEL_joint_matrix,
-      SPV_INTEL_bfloat16_conversion, SPV_NV_compute_shader_derivatives, SPV_NV_cooperative_matrix,
+      SPV_INTEL_bfloat16_conversion, SPV_INTEL_runtime_aligned,
+      SPV_NV_compute_shader_derivatives, SPV_NV_cooperative_matrix,
       SPV_NV_fragment_shader_barycentric, SPV_NV_geometry_shader_passthrough,
       SPV_NV_mesh_shader, SPV_NV_ray_tracing, SPV_NV_sample_mask_override_coverage,
       SPV_NV_shader_image_footprint, SPV_NV_shader_sm_builtins,
@@ -788,6 +790,11 @@ def SPIRV_C_ArbitraryPrecisionFixedPointINTEL           : I32EnumAttrCase<"Arbit
 def SPIRV_C_USMStorageClassesINTEL                      : I32EnumAttrCase<"USMStorageClassesINTEL", 5935> {
   list<Availability> availability = [
     Extension<[SPV_INTEL_usm_storage_classes]>
+  ];
+}
+def SPIRV_C_RuntimeAlignedAttributeINTEL                      : I32EnumAttrCase<"RuntimeAlignedAttributeINTEL", 5939> {
+  list<Availability> availability = [
+    Extension<[SPV_INTEL_runtime_aligned]>
   ];
 }
 def SPIRV_C_IOPipesINTEL                                : I32EnumAttrCase<"IOPipesINTEL", 5943> {
@@ -1454,7 +1461,8 @@ def SPIRV_CapabilityAttr :
       SPIRV_C_FPGAMemoryAccessesINTEL, SPIRV_C_FPGAClusterAttributesINTEL,
       SPIRV_C_LoopFuseINTEL, SPIRV_C_MemoryAccessAliasingINTEL,
       SPIRV_C_FPGABufferLocationINTEL, SPIRV_C_ArbitraryPrecisionFixedPointINTEL,
-      SPIRV_C_USMStorageClassesINTEL, SPIRV_C_IOPipesINTEL, SPIRV_C_BlockingPipesINTEL,
+      SPIRV_C_USMStorageClassesINTEL, SPIRV_C_RuntimeAlignedAttributeINTEL,
+      SPIRV_C_IOPipesINTEL, SPIRV_C_BlockingPipesINTEL,
       SPIRV_C_FPGARegINTEL, SPIRV_C_DotProductInputAll,
       SPIRV_C_DotProductInput4x8BitPacked, SPIRV_C_DotProduct, SPIRV_C_RayCullMaskKHR,
       SPIRV_C_BitInstructions, SPIRV_C_AtomicFloat32AddEXT, SPIRV_C_AtomicFloat64AddEXT,
@@ -3995,6 +4003,58 @@ def SPIRV_PackedVectorFormatAttr :
       SPIRV_PVF_PackedVectorFormat4x8Bit
     ]>;
 
+def SPIRV_FPA_Zext                : I32EnumAttrCase<"Zext", 0> {
+  list<Availability> availability = [
+    Capability<[SPIRV_C_Kernel]>
+  ];
+}
+def SPIRV_FPA_Sext                : I32EnumAttrCase<"Sext", 1> {
+  list<Availability> availability = [
+    Capability<[SPIRV_C_Kernel]>
+  ];
+}
+def SPIRV_FPA_ByVal               : I32EnumAttrCase<"ByVal", 2> {
+  list<Availability> availability = [
+    Capability<[SPIRV_C_Kernel]>
+  ];
+}
+def SPIRV_FPA_Sret                : I32EnumAttrCase<"Sret", 3> {
+  list<Availability> availability = [
+    Capability<[SPIRV_C_Kernel]>
+  ];
+}
+def SPIRV_FPA_NoAlias             : I32EnumAttrCase<"NoAlias", 4> {
+  list<Availability> availability = [
+    Capability<[SPIRV_C_Kernel]>
+  ];
+}
+def SPIRV_FPA_NoCapture           : I32EnumAttrCase<"NoCapture", 5> {
+  list<Availability> availability = [
+    Capability<[SPIRV_C_Kernel]>
+  ];
+}
+def SPIRV_FPA_NoWrite             : I32EnumAttrCase<"NoWrite", 6> {
+  list<Availability> availability = [
+    Capability<[SPIRV_C_Kernel]>
+  ];
+}
+def SPIRV_FPA_NoReadWrite         : I32EnumAttrCase<"NoReadWrite", 7> {
+  list<Availability> availability = [
+    Capability<[SPIRV_C_Kernel]>
+  ];
+}
+def SPIRV_FPA_RuntimeAlignedINTEL : I32EnumAttrCase<"RuntimeAlignedINTEL", 5940> {
+  list<Availability> availability = [
+    Capability<[SPIRV_C_RuntimeAlignedAttributeINTEL]>
+  ];
+}
+
+def SPIRV_FunctionParameterAttributeAttr :
+    SPIRV_I32EnumAttr<"FunctionParameterAttribute", "valid SPIR-V FunctionParameterAttribute", "function_parameter_attribute", [
+      SPIRV_FPA_Zext, SPIRV_FPA_Sext, SPIRV_FPA_ByVal, SPIRV_FPA_Sret,
+      SPIRV_FPA_NoAlias, SPIRV_FPA_NoCapture, SPIRV_FPA_NoWrite,
+      SPIRV_FPA_NoReadWrite , SPIRV_FPA_RuntimeAlignedINTEL
+    ]>;
 // End enum section. Generated from SPIR-V spec; DO NOT MODIFY!
 
 // Enums added manually that are not part of SPIR-V spec
