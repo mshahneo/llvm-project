@@ -954,27 +954,142 @@ LogicalResult SPIRVDialect::verifyOperationAttribute(Operation *op,
   return success();
 }
 
-/// Verifies the given SPIR-V `attribute` attached to a value of the given
-/// `valueType` is valid.
-static LogicalResult verifyRegionAttribute(Location loc, Type valueType,
-                                           NamedAttribute attribute) {
-  StringRef symbol = attribute.getName().strref();
-  Attribute attr = attribute.getValue();
+/// Verifies FunctionParameterAttributes attached to function arguments and
+/// results
+LogicalResult verifyFuncParamAttr(Operation *op, unsigned regionIndex,
+                                  unsigned argOrResultIndex,
+                                  bool isResultAttr) {
+  llvm::SmallMapVector<spirv::FunctionParameterAttribute, unsigned, 8>
+      funcParamAttrMap;
 
-  if (symbol != spirv::getInterfaceVarABIAttrName())
-    return emitError(loc, "found unsupported '")
-           << symbol << "' attribute on region argument";
+  auto funcOp = dyn_cast<spirv::FuncOp>(op);
+  if (!funcOp)
+    return op->emitError(
+        "not a function op, function_parameter_attribute can only attached to "
+        "spirv::FuncOp resutls and arguments");
 
+  auto attributeList =
+      isResultAttr
+          ? function_interface_impl::getResultAttrs(funcOp, argOrResultIndex)
+          : function_interface_impl::getArgAttrs(funcOp, argOrResultIndex);
+  for (auto argOrResultAttr : attributeList) {
+    Attribute attr = argOrResultAttr.getValue();
+    auto funcParamAttr = dyn_cast<spirv::FuncParamAttrAttr>(attr);
+
+    // If not FuncParamAttr, ignore the attribute, we only
+    // verify the usage restriction of FuncParamAttr here.
+    if (!funcParamAttr) {
+      continue;
+    }
+    auto attrVal = funcParamAttr.getFunctionParameterAttribute().getValue();
+    switch (attrVal) {
+    case FunctionParameterAttribute::Zext:
+    case FunctionParameterAttribute::Sext: {
+      auto fpaZext = funcParamAttrMap.find(FunctionParameterAttribute::Zext);
+      auto fpaSext = funcParamAttrMap.find(FunctionParameterAttribute::Sext);
+      if (fpaZext != funcParamAttrMap.end() ||
+          fpaSext != funcParamAttrMap.end())
+        return op->emitError("only one of  'Zext' or 'Sext' "
+                             "function_parameter_attribute can be applied");
+      funcParamAttrMap[attrVal] = 1;
+      break;
+    }
+    case FunctionParameterAttribute::ByVal: {
+      auto fpaByVal = funcParamAttrMap.find(FunctionParameterAttribute::ByVal);
+      if (fpaByVal != funcParamAttrMap.end())
+        return op->emitError("can not attach same "
+                             "function_parameter_attribute more than once to "
+                             "the same identifier");
+      funcParamAttrMap[attrVal] = 1;
+      break;
+    }
+    case FunctionParameterAttribute::Sret: {
+      auto fpaSret = funcParamAttrMap.find(FunctionParameterAttribute::Sret);
+      if (fpaSret != funcParamAttrMap.end())
+        return op->emitError("can not attach same "
+                             "function_parameter_attribute more than once to "
+                             "the same identifier");
+      funcParamAttrMap[attrVal] = 1;
+      break;
+    }
+    case FunctionParameterAttribute::NoAlias: {
+      auto fpaNoAlias =
+          funcParamAttrMap.find(FunctionParameterAttribute::NoAlias);
+      if (fpaNoAlias != funcParamAttrMap.end())
+        return op->emitError("can not attach same "
+                             "function_parameter_attribute more than once to "
+                             "the same identifier");
+      funcParamAttrMap[attrVal] = 1;
+      break;
+    }
+    case FunctionParameterAttribute::NoCapture: {
+      auto fpaNoCapture =
+          funcParamAttrMap.find(FunctionParameterAttribute::NoCapture);
+      if (fpaNoCapture != funcParamAttrMap.end())
+        return op->emitError("can not attach same "
+                             "function_parameter_attribute more than once to "
+                             "the same identifier");
+      funcParamAttrMap[attrVal] = 1;
+      break;
+    }
+    case FunctionParameterAttribute::NoWrite: {
+      auto fpaNoWrite =
+          funcParamAttrMap.find(FunctionParameterAttribute::NoWrite);
+      if (fpaNoWrite != funcParamAttrMap.end())
+        return op->emitError("can not attach same "
+                             "function_parameter_attribute more than once to "
+                             "the same identifier");
+      funcParamAttrMap[attrVal] = 1;
+      break;
+    }
+    case FunctionParameterAttribute::NoReadWrite: {
+      auto fpaNoReadWrite =
+          funcParamAttrMap.find(FunctionParameterAttribute::NoReadWrite);
+      if (fpaNoReadWrite != funcParamAttrMap.end())
+        return op->emitError("can not attach same "
+                             "function_parameter_attribute more than once to "
+                             "the same identifier");
+      funcParamAttrMap[attrVal] = 1;
+      break;
+    }
+    case FunctionParameterAttribute::RuntimeAlignedINTEL: {
+      if (isResultAttr)
+        return op->emitError("can not attach 'RuntimeAlignedINTEL' "
+                             "function_parameter_attribute to return values");
+      // auto varType = funcOp->getFunctionType().getInput(argIndex);
+      if (!llvm::isa<spirv::PointerType>(
+              funcOp.getFunctionType().getInput(argOrResultIndex)))
+        return op->emitError(
+            "function_parameter_attribute 'RuntimeAlignedINTEL' can only be "
+            "attached to pointer type argument");
+      auto fpaRuntimeAlignedINTEL = funcParamAttrMap.find(
+          FunctionParameterAttribute::RuntimeAlignedINTEL);
+      if (fpaRuntimeAlignedINTEL != funcParamAttrMap.end())
+        return op->emitError("can not attach same "
+                             "function_parameter_attribute more than once to "
+                             "the same identifier");
+      funcParamAttrMap[attrVal] = 1;
+      break;
+    }
+    }
+  }
+  return success();
+}
+
+/// Verifies the given SPIR-V InterfaceVarABI `attribute` attached to a value of
+/// the given `valueType` is valid.
+static LogicalResult
+verifyInterfaceVarABIAttribute(Location loc, Type valueType, Attribute attr) {
   auto varABIAttr = llvm::dyn_cast<spirv::InterfaceVarABIAttr>(attr);
   if (!varABIAttr)
-    return emitError(loc, "'")
-           << symbol << "' must be a spirv::InterfaceVarABIAttr";
+    return emitError(loc, "")
+           << " 'spirv.interface_var_abi' attribute must be a "
+              "spirv::InterfaceVarABIAttr";
 
   if (varABIAttr.getStorageClass() && !valueType.isIntOrIndexOrFloat())
-    return emitError(loc, "'") << symbol
-                               << "' attribute cannot specify storage class "
+    return emitError(loc, "'") << " 'spirv.interface_var_abi' attribute "
+                                  "cannot specify storage class "
                                   "when attaching to a non-scalar value";
-
   return success();
 }
 
@@ -982,13 +1097,36 @@ LogicalResult SPIRVDialect::verifyRegionArgAttribute(Operation *op,
                                                      unsigned regionIndex,
                                                      unsigned argIndex,
                                                      NamedAttribute attribute) {
-  return verifyRegionAttribute(
-      op->getLoc(), op->getRegion(regionIndex).getArgument(argIndex).getType(),
-      attribute);
+  StringRef symbol = attribute.getName().strref();
+  Attribute attr = attribute.getValue();
+
+  // auto funcParamAttrName = std::string("spirv.").append(
+  //     spirv::FunctionParameterAttributeAttr::getMnemonic());
+  if (symbol != spirv::getInterfaceVarABIAttrName() &&
+      symbol != spirv::FuncParamAttrAttr::getMnemonic())
+    return emitError(op->getLoc(), "found unsupported '")
+           << symbol << "' attribute on region argument";
+  if (auto funcParamAttr = dyn_cast<spirv::FuncParamAttrAttr>(attr))
+    return verifyFuncParamAttr(op, regionIndex, argIndex,
+                               false /*isResultAttr*/);
+  if (auto varABIAttr = dyn_cast<spirv::InterfaceVarABIAttr>(attr))
+    return verifyInterfaceVarABIAttribute(
+        op->getLoc(),
+        op->getRegion(regionIndex).getArgument(argIndex).getType(), attr);
+  return op->emitError("found unsupported attribute value");
 }
 
-LogicalResult SPIRVDialect::verifyRegionResultAttribute(
-    Operation *op, unsigned /*regionIndex*/, unsigned /*resultIndex*/,
-    NamedAttribute attribute) {
-  return op->emitError("cannot attach SPIR-V attributes to region result");
+LogicalResult
+SPIRVDialect::verifyRegionResultAttribute(Operation *op, unsigned regionIndex,
+                                          unsigned resultIndex,
+                                          NamedAttribute attribute) {
+  StringRef symbol = attribute.getName().strref();
+  Attribute attr = attribute.getValue();
+  auto funcParamAttr = dyn_cast<spirv::FuncParamAttrAttr>(attr);
+  if (!funcParamAttr) {
+    return op->emitError("only function_parameter_attribute SPIR-V attribute "
+                         "can be attached to region result");
+  }
+  return verifyFuncParamAttr(op, regionIndex, resultIndex,
+                             true /*isResultAttr*/);
 }

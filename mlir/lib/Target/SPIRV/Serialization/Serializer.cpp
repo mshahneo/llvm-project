@@ -208,6 +208,8 @@ void Serializer::processMemoryModel() {
 LogicalResult Serializer::processDecoration(Location loc, uint32_t resultID,
                                             NamedAttribute attr) {
   auto attrName = attr.getName().strref();
+  // Remove the dialect prefix if present.
+  attrName.consume_front_insensitive("spirv.");
   auto decorationName =
       llvm::convertToCamelFromSnakeCase(attrName, /*capitalizeFirst=*/true);
   auto decoration = spirv::symbolizeDecoration(decorationName);
@@ -222,7 +224,8 @@ LogicalResult Serializer::processDecoration(Location loc, uint32_t resultID,
   case spirv::Decoration::LinkageAttributes: {
     // Get the value of the Linkage Attributes
     // e.g., LinkageAttributes=["linkageName", linkageType].
-    auto linkageAttr = llvm::dyn_cast<spirv::LinkageAttributesAttr>(attr.getValue());
+    auto linkageAttr =
+        llvm::dyn_cast<spirv::LinkageAttributesAttr>(attr.getValue());
     auto linkageName = linkageAttr.getLinkageName();
     auto linkageType = linkageAttr.getLinkageType().getValue();
     // Encode the Linkage Name (string literal to uint32_t).
@@ -251,8 +254,9 @@ LogicalResult Serializer::processDecoration(Location loc, uint32_t resultID,
     }
     return emitError(loc, "expected string attribute for ") << attrName;
   case spirv::Decoration::FuncParamAttr: {
-    auto funcParamAttr =
-        attr.getValue().dyn_cast<spirv::FunctionParameterAttributeAttr>();
+    auto funcParamAttr = attr.getValue()
+                             .dyn_cast<spirv::FuncParamAttrAttr>()
+                             .getFunctionParameterAttribute();
     args.push_back(static_cast<uint32_t>(funcParamAttr.getValue()));
     break;
   }

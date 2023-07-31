@@ -14,7 +14,7 @@ func.func @unknown_attr_on_region(%arg: i32 {spirv.something}) {
 
 // -----
 
-// expected-error @+1 {{cannot attach SPIR-V attributes to region result}}
+// expected-error @+1 {{only function_parameter_attribute SPIR-V attribute can be attached to region result}}
 func.func @unknown_attr_on_region() -> (i32 {spirv.something}) {
   %0 = arith.constant 10.0 : f32
   return %0: f32
@@ -52,7 +52,7 @@ func.func @spv_entry_point() attributes {
 // spirv.interface_var_abi
 //===----------------------------------------------------------------------===//
 
-// expected-error @+1 {{'spirv.interface_var_abi' must be a spirv::InterfaceVarABIAttr}}
+// expected-error @+1 {{found unsupported attribute value}}
 func.func @interface_var(
   %arg0 : f32 {spirv.interface_var_abi = 64}
 ) { return }

@@ -54,6 +54,18 @@ def SPIRV_LinkageAttributesAttr : SPIRV_Attr<"LinkageAttributes", "linkage_attri
   let assemblyFormat = "`<` struct(params) `>`";
 }
 
+/// FuncParamAttr definition, this attribute is used with function arguents and results, 
+/// hence it has the dialect name in the mneomonic
+def SPIRV_FuncParamAttr : SPIRV_Attr<"FuncParamAttr", "spirv.func_param_attr"> {
+  let parameters = (ins
+    "mlir::spirv::FunctionParameterAttributeAttr":$function_parameter_attribute
+  );
+  let assemblyFormat = "`<` struct(params) `>`";
+}
+
+def SPIRV_FuncParamAttrArrayAttr : TypedArrayAttrBase<
+    SPIRV_FuncParamAttr, "FuncParamAttr array attribute">
+
 // Description of cooperative matrix operations supported on the
 // target. Represents `VkCooperativeMatrixPropertiesNV`. See
 // https://www.khronos.org/registry/vulkan/specs/1.2-extensions/man/html/VkCooperativeMatrixPropertiesNV.html

@@ -181,6 +181,9 @@ LogicalResult Serializer::processFuncOp(spirv::FuncOp op) {
   LLVM_DEBUG(llvm::dbgs() << "-- start function '" << op.getName() << "' --\n");
   assert(functionHeader.empty() && functionBody.empty());
 
+  // unsigned numArgs = op.getNumArguments();
+  // unsigned numResults = op.getNumResults();
+
   uint32_t fnTypeID = 0;
   // Generate type of the function.
   if (failed(processType(op.getLoc(), op.getFunctionType(), fnTypeID)))
@@ -304,6 +307,74 @@ LogicalResult Serializer::processFuncOp(spirv::FuncOp op) {
       }
     }
   }
+
+  // Insert Decorations for the arguments and results.
+  for (auto arg : valueIDMap) {
+    llvm::errs() << "Value: " << arg.first << "\n";
+    auto blockArg = dyn_cast<BlockArgument>(arg.first);
+    if (!blockArg)
+      continue;
+
+    auto argIndex = blockArg.getArgNumber();
+    auto argAttrs = function_interface_impl::getArgAttrs(op, argIndex);
+    for (auto attr : argAttrs) {
+      auto attrName = attr.getName().strref();
+      // Remove the dialect prefix if present.
+      attrName.consume_front_insensitive("spirv.");
+      auto isValidDecoration = mlir::spirv::symbolizeEnum<spirv::Decoration>(
+          llvm::convertToCamelFromSnakeCase(attrName,
+                                            /*capitalizeFirst=*/true));
+      if (isValidDecoration != std::nullopt) {
+        if (failed(processDecoration(op.getLoc(), arg.second, attr))) {
+          return failure();
+        }
+      }
+    }
+  }
+
+  // TODO: How do we handle the results? How do we get the result ID?
+  // Only one result allowed in a spirv.func op, hence the result index is 0
+  auto resultAttrs = function_interface_impl::getResultAttrs(op, 0);
+  for (auto attr : resultAttrs) {
+    auto attrName = attr.getName().strref();
+    // Remove the dialect prefix if present.
+    attrName.consume_front_insensitive("spirv.");
+    auto isValidDecoration = mlir::spirv::symbolizeEnum<spirv::Decoration>(
+        llvm::convertToCamelFromSnakeCase(attrName,
+                                          /*capitalizeFirst=*/true));
+    if (isValidDecoration != std::nullopt) {
+      if (failed(processDecoration(op.getLoc(), resTypeID, attr))) {
+        return failure();
+      }
+    }
+  }
+
+  // // Insert Decorations for the arguments and results
+  // for (unsigned i = 0; i < numArgs; i++) {
+  //   for (auto argAttr : op.getArgAttrs(i)) {
+  //     auto isValidDecoration =
+  //     mlir::spirv::symbolizeEnum<spirv::Decoration>(
+  //         llvm::convertToCamelFromSnakeCase(attr.getName().strref(),
+  //                                           /*capitalizeFirst=*/true));
+  //     if (isValidDecoration != std::nullopt) {
+  //       if (failed(processDecoration(op.getLoc(), funcID, attr))) {
+  //         return failure();
+  //       }
+  //     }
+  //   }
+  // }
+  // for (auto arg : op.getArguments()) {
+  //   uint32_t argTypeID = 0;
+  //   if (failed(processType(op.getLoc(), arg.getType(), argTypeID))) {
+  //     return failure();
+  //   }
+  //   auto argValueID = getNextID();
+  //   valueIDMap[arg] = argValueID;
+  //   encodeInstructionInto(functionHeader,
+  //   spirv::Opcode::OpFunctionParameter,
+  //                         {argTypeID, argValueID});
+  // }
+
   // Insert OpFunctionEnd.
   encodeInstructionInto(functionBody, spirv::Opcode::OpFunctionEnd, {});
 
@@ -425,16 +496,16 @@ LogicalResult Serializer::processSelectionOp(spirv::SelectionOp selectionOp) {
   auto mergeID = getBlockID(mergeBlock);
   auto loc = selectionOp.getLoc();
 
-  // This SelectionOp is in some MLIR block with preceding and following ops. In
-  // the binary format, it should reside in separate SPIR-V blocks from its
+  // This SelectionOp is in some MLIR block with preceding and following ops.
+  // In the binary format, it should reside in separate SPIR-V blocks from its
   // preceding and following ops. So we need to emit unconditional branches to
   // jump to this SelectionOp's SPIR-V blocks and jumping back to the normal
   // flow afterwards.
   encodeInstructionInto(functionBody, spirv::Opcode::OpBranch, {headerID});
 
   // Emit the selection header block, which dominates all other blocks, first.
-  // We need to emit an OpSelectionMerge instruction before the selection header
-  // block's terminator.
+  // We need to emit an OpSelectionMerge instruction before the selection
+  // header block's terminator.
   auto emitSelectionMerge = [&]() {
     if (failed(emitDebugLine(functionBody, loc)))
       return failure();
@@ -458,8 +529,8 @@ LogicalResult Serializer::processSelectionOp(spirv::SelectionOp selectionOp) {
 
   // There is nothing to do for the merge block in the selection, which just
   // contains a spirv.mlir.merge op, itself. But we need to have an OpLabel
-  // instruction to start a new SPIR-V block for ops following this SelectionOp.
-  // The block should use the <id> for the merge block.
+  // instruction to start a new SPIR-V block for ops following this
+  // SelectionOp. The block should use the <id> for the merge block.
   encodeInstructionInto(functionBody, spirv::Opcode::OpLabel, {mergeID});
   LLVM_DEBUG(llvm::dbgs() << "done merge ");
   LLVM_DEBUG(printBlock(mergeBlock, llvm::dbgs()));
@@ -483,8 +554,8 @@ LogicalResult Serializer::processLoopOp(spirv::LoopOp loopOp) {
   auto mergeID = getBlockID(mergeBlock);
   auto loc = loopOp.getLoc();
 
-  // This LoopOp is in some MLIR block with preceding and following ops. In the
-  // binary format, it should reside in separate SPIR-V blocks from its
+  // This LoopOp is in some MLIR block with preceding and following ops. In
+  // the binary format, it should reside in separate SPIR-V blocks from its
   // preceding and following ops. So we need to emit unconditional branches to
   // jump to this LoopOp's SPIR-V blocks and jumping back to the normal flow
   // afterwards.
@@ -510,8 +581,8 @@ LogicalResult Serializer::processLoopOp(spirv::LoopOp loopOp) {
     return failure();
 
   // Process all blocks with a depth-first visitor starting from the header
-  // block. The loop header block, loop continue block, and loop merge block are
-  // skipped by this visitor and handled later in this function.
+  // block. The loop header block, loop continue block, and loop merge block
+  // are skipped by this visitor and handled later in this function.
   if (failed(visitInPrettyBlockOrder(
           headerBlock, [&](Block *block) { return processBlock(block); },
           /*skipHeader=*/true, /*skipBlocks=*/{continueBlock, mergeBlock})))
@@ -521,10 +592,10 @@ LogicalResult Serializer::processLoopOp(spirv::LoopOp loopOp) {
   if (failed(processBlock(continueBlock)))
     return failure();
 
-  // There is nothing to do for the merge block in the loop, which just contains
-  // a spirv.mlir.merge op, itself. But we need to have an OpLabel instruction
-  // to start a new SPIR-V block for ops following this LoopOp. The block should
-  // use the <id> for the merge block.
+  // There is nothing to do for the merge block in the loop, which just
+  // contains a spirv.mlir.merge op, itself. But we need to have an OpLabel
+  // instruction to start a new SPIR-V block for ops following this LoopOp.
+  // The block should use the <id> for the merge block.
   encodeInstructionInto(functionBody, spirv::Opcode::OpLabel, {mergeID});
   LLVM_DEBUG(llvm::dbgs() << "done merge ");
   LLVM_DEBUG(printBlock(mergeBlock, llvm::dbgs()));
