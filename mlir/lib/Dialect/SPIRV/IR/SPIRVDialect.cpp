@@ -392,7 +392,8 @@ static Type parseCooperativeMatrixNVType(SPIRVDialect const &dialect,
 
 // joint-matrix-type ::= `!spirv.jointmatrix` `<`rows `x` columns `x`
 // element-type
-//                                                       `,` layout `,` scope`>`
+//                                                       `,` layout `,` scope
+//                                                       `,` use`>`
 static Type parseJointMatrixType(SPIRVDialect const &dialect,
                                  DialectAsmParser &parser) {
   if (parser.parseLess())
@@ -419,10 +420,14 @@ static Type parseJointMatrixType(SPIRVDialect const &dialect,
   if (parser.parseComma() ||
       spirv::parseEnumKeywordAttr(scope, parser, "scope <id>"))
     return Type();
+  MatrixUse matrixUse;
+  if (parser.parseComma() ||
+      parseEnumKeywordAttr(matrixUse, parser, "matrixUse <id>"))
+    return Type();
   if (parser.parseGreater())
     return Type();
   return JointMatrixINTELType::get(elementTy, scope, dims[0], dims[1],
-                                   matrixLayout);
+                                   matrixLayout, matrixUse);
 }
 
 // TODO: Reorder methods to be utilities first and parse*Type
@@ -926,7 +931,8 @@ static void print(JointMatrixINTELType type, DialectAsmPrinter &os) {
   os << "jointmatrix<" << type.getRows() << "x" << type.getColumns() << "x";
   os << type.getElementType() << ", "
      << stringifyMatrixLayout(type.getMatrixLayout());
-  os << ", " << stringifyScope(type.getScope()) << ">";
+  os << ", " << stringifyScope(type.getScope()) << ", "
+     << stringifyMatrixUse(type.getMatrixUse()) << ">";
 }
 
 static void print(MatrixType type, DialectAsmPrinter &os) {

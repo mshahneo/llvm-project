@@ -459,7 +459,8 @@ public:
   using Base::Base;
 
   static JointMatrixINTELType get(Type elementType, Scope scope, unsigned rows,
-                                  unsigned columns, MatrixLayout matrixLayout);
+                                  unsigned columns, MatrixLayout matrixLayout,
+                                  MatrixUse matrixUse);
   Type getElementType() const;
 
   /// Return the scope of the joint matrix.
@@ -471,6 +472,9 @@ public:
 
   /// return the layout of the matrix
   MatrixLayout getMatrixLayout() const;
+
+  /// return the use of the matrix
+  MatrixUse getMatrixUse() const;
 
   void getExtensions(SPIRVType::ExtensionArrayRefVector &extensions,
                      std::optional<StorageClass> storage = std::nullopt);

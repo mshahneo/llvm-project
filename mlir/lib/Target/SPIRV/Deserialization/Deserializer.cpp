@@ -977,7 +977,7 @@ LogicalResult spirv::Deserializer::processCooperativeMatrixTypeNV(
 
 LogicalResult
 spirv::Deserializer::processJointMatrixType(ArrayRef<uint32_t> operands) {
-  if (operands.size() != 6) {
+  if (operands.size() != 7) {
     return emitError(unknownLoc, "OpTypeJointMatrix must have element "
                                  "type and row x column parameters");
   }
@@ -987,7 +987,13 @@ spirv::Deserializer::processJointMatrixType(ArrayRef<uint32_t> operands) {
     return emitError(unknownLoc, "OpTypeJointMatrix references undefined <id> ")
            << operands[1];
   }
-
+  auto matrixUse =
+      spirv::symbolizeMatrixUse(getConstantInt(operands[6]).getInt());
+  if (!matrixUse) {
+    return emitError(unknownLoc,
+                     "OpTypeJointMatrix references undefined Use <id> ")
+           << operands[6];
+  }
   auto scope = spirv::symbolizeScope(getConstantInt(operands[5]).getInt());
   if (!scope) {
     return emitError(unknownLoc,
@@ -998,14 +1004,15 @@ spirv::Deserializer::processJointMatrixType(ArrayRef<uint32_t> operands) {
       spirv::symbolizeMatrixLayout(getConstantInt(operands[4]).getInt());
   if (!matrixLayout) {
     return emitError(unknownLoc,
-                     "OpTypeJointMatrix references undefined scope <id> ")
+                     "OpTypeJointMatrix references undefined Layout <id> ")
            << operands[4];
   }
   unsigned rows = getConstantInt(operands[2]).getInt();
   unsigned columns = getConstantInt(operands[3]).getInt();
 
-  typeMap[operands[0]] = spirv::JointMatrixINTELType::get(
-      elementTy, scope.value(), rows, columns, matrixLayout.value());
+  typeMap[operands[0]] =
+      spirv::JointMatrixINTELType::get(elementTy, scope.value(), rows, columns,
+                                       matrixLayout.value(), matrixUse.value());
   return success();
 }
 

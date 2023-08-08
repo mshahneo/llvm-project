@@ -222,7 +222,8 @@ LogicalResult Serializer::processDecoration(Location loc, uint32_t resultID,
   case spirv::Decoration::LinkageAttributes: {
     // Get the value of the Linkage Attributes
     // e.g., LinkageAttributes=["linkageName", linkageType].
-    auto linkageAttr = llvm::dyn_cast<spirv::LinkageAttributesAttr>(attr.getValue());
+    auto linkageAttr =
+        llvm::dyn_cast<spirv::LinkageAttributesAttr>(attr.getValue());
     auto linkageName = linkageAttr.getLinkageName();
     auto linkageType = linkageAttr.getLinkageType().getValue();
     // Encode the Linkage Name (string literal to uint32_t).
@@ -653,6 +654,8 @@ LogicalResult Serializer::prepareBasicType(
         static_cast<uint32_t>(jointMatrixType.getMatrixLayout())));
     operands.push_back(
         getConstantOp(static_cast<uint32_t>(jointMatrixType.getScope())));
+    operands.push_back(
+        getConstantOp(static_cast<uint32_t>(jointMatrixType.getMatrixUse())));
     return success();
   }
 

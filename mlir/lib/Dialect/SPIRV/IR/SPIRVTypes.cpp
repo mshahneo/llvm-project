@@ -336,7 +336,8 @@ void CooperativeMatrixNVType::getCapabilities(
 //===----------------------------------------------------------------------===//
 
 struct spirv::detail::JointMatrixTypeStorage : public TypeStorage {
-  using KeyTy = std::tuple<Type, unsigned, unsigned, MatrixLayout, Scope>;
+  using KeyTy =
+      std::tuple<Type, unsigned, unsigned, MatrixLayout, Scope, MatrixUse>;
 
   static JointMatrixTypeStorage *construct(TypeStorageAllocator &allocator,
                                            const KeyTy &key) {
@@ -345,26 +346,29 @@ struct spirv::detail::JointMatrixTypeStorage : public TypeStorage {
   }
 
   bool operator==(const KeyTy &key) const {
-    return key == KeyTy(elementType, rows, columns, matrixLayout, scope);
+    return key ==
+           KeyTy(elementType, rows, columns, matrixLayout, scope, matrixUse);
   }
 
   JointMatrixTypeStorage(const KeyTy &key)
       : elementType(std::get<0>(key)), rows(std::get<1>(key)),
-        columns(std::get<2>(key)), scope(std::get<4>(key)),
-        matrixLayout(std::get<3>(key)) {}
+        columns(std::get<2>(key)), matrixLayout(std::get<3>(key)),
+        scope(std::get<4>(key)), matrixUse(std::get<5>(key)) {}
 
   Type elementType;
   unsigned rows;
   unsigned columns;
   Scope scope;
   MatrixLayout matrixLayout;
+  MatrixUse matrixUse;
 };
 
 JointMatrixINTELType JointMatrixINTELType::get(Type elementType, Scope scope,
                                                unsigned rows, unsigned columns,
-                                               MatrixLayout matrixLayout) {
+                                               MatrixLayout matrixLayout,
+                                               MatrixUse matrixUse) {
   return Base::get(elementType.getContext(), elementType, rows, columns,
-                   matrixLayout, scope);
+                   matrixLayout, scope, matrixUse);
 }
 
 Type JointMatrixINTELType::getElementType() const {
@@ -379,6 +383,10 @@ unsigned JointMatrixINTELType::getColumns() const { return getImpl()->columns; }
 
 MatrixLayout JointMatrixINTELType::getMatrixLayout() const {
   return getImpl()->matrixLayout;
+}
+
+MatrixUse JointMatrixINTELType::getMatrixUse() const {
+  return getImpl()->matrixUse;
 }
 
 void JointMatrixINTELType::getExtensions(
