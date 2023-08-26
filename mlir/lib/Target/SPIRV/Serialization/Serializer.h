@@ -128,6 +128,9 @@ private:
   /// Processes a SPIR-V function op.
   LogicalResult processFuncOp(spirv::FuncOp op);
 
+  /// Processes a SPIR-V ConstantFunctionPointerINTEL op.
+  LogicalResult processINTELConstantFunctionPointerOp(spirv::INTELConstantFunctionPointerOp op);
+
   LogicalResult processVariableOp(spirv::VariableOp op);
 
   /// Process a SPIR-V GlobalVariableOp

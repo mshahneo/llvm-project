@@ -4110,6 +4110,7 @@ def SPIRV_IsJointMatrixType :
   CPred<"::llvm::isa<::mlir::spirv::JointMatrixINTELType>($_self)">;
 def SPIRV_IsMatrixType : CPred<"::llvm::isa<::mlir::spirv::MatrixType>($_self)">;
 def SPIRV_IsPtrType : CPred<"::llvm::isa<::mlir::spirv::PointerType>($_self)">;
+def SPIRV_IsFunctionPtrINTELType : CPred<"::llvm::isa<::mlir::spirv::FunctionPointerINTELType>($_self)">;
 def SPIRV_IsRTArrayType : CPred<"::llvm::isa<::mlir::spirv::RuntimeArrayType>($_self)">;
 def SPIRV_IsSampledImageType : CPred<"::llvm::isa<::mlir::spirv::SampledImageType>($_self)">;
 def SPIRV_IsStructType : CPred<"::llvm::isa<::mlir::spirv::StructType>($_self)">;
@@ -4132,6 +4133,8 @@ def SPIRV_Vector : VectorOfLengthAndType<[2, 3, 4, 8, 16],
 // dialect-specific types so we use "Any" here.
 def SPIRV_AnyPtr : DialectType<SPIRV_Dialect, SPIRV_IsPtrType,
                              "any SPIR-V pointer type">;
+def SPIRV_AnyFunctionPtrINTEL : DialectType<SPIRV_Dialect, SPIRV_IsFunctionPtrINTELType,
+                             "any SPIR-V function pointer type">;
 def SPIRV_AnyArray : DialectType<SPIRV_Dialect, SPIRV_IsArrayType,
                                "any SPIR-V array type">;
 def SPIRV_AnyCooperativeMatrix : DialectType<SPIRV_Dialect,
@@ -4159,10 +4162,10 @@ def SPIRV_Aggregate : AnyTypeOf<[SPIRV_AnyArray, SPIRV_AnyRTArray, SPIRV_AnyStru
 def SPIRV_Composite :
     AnyTypeOf<[SPIRV_Vector, SPIRV_AnyArray, SPIRV_AnyRTArray, SPIRV_AnyStruct,
                SPIRV_AnyCooperativeMatrix, SPIRV_AnyCooperativeMatrixNV,
-               SPIRV_AnyJointMatrix, SPIRV_AnyMatrix]>;
+               SPIRV_AnyJointMatrix, SPIRV_AnyMatrix, SPIRV_AnyFunctionPtrINTEL]>;
 def SPIRV_Type : AnyTypeOf<[
     SPIRV_Void, SPIRV_Bool, SPIRV_Integer, SPIRV_Float, SPIRV_Vector,
-    SPIRV_AnyPtr, SPIRV_AnyArray, SPIRV_AnyRTArray, SPIRV_AnyStruct,
+    SPIRV_AnyPtr, SPIRV_AnyFunctionPtrINTEL, SPIRV_AnyArray, SPIRV_AnyRTArray, SPIRV_AnyStruct,
     SPIRV_AnyCooperativeMatrix, SPIRV_AnyCooperativeMatrixNV,
     SPIRV_AnyJointMatrix, SPIRV_AnyMatrix, SPIRV_AnySampledImage
   ]>;
@@ -4199,6 +4202,8 @@ class SPIRV_MatrixOrCoopMatrixOf<Type type> :
 
 def SPIRV_ScalarOrVector : AnyTypeOf<[SPIRV_Scalar, SPIRV_Vector]>;
 def SPIRV_ScalarOrVectorOrPtr : AnyTypeOf<[SPIRV_ScalarOrVector, SPIRV_AnyPtr]>;
+
+def SPIRV_PtrOrFunctionPtrINTEL : AnyTypeOf<[SPIRV_AnyPtr, SPIRV_AnyFunctionPtrINTEL]>;
 
 class SPIRV_Vec4<Type type> : VectorOfLengthAndType<[4], [type]>;
 def SPIRV_IntVec4 : SPIRV_Vec4<SPIRV_Integer>;
@@ -4456,6 +4461,8 @@ def SPIRV_OC_OpCooperativeMatrixMulAddNV  : I32EnumAttrCase<"OpCooperativeMatrix
 def SPIRV_OC_OpCooperativeMatrixLengthNV  : I32EnumAttrCase<"OpCooperativeMatrixLengthNV", 5362>;
 def SPIRV_OC_OpSubgroupBlockReadINTEL     : I32EnumAttrCase<"OpSubgroupBlockReadINTEL", 5575>;
 def SPIRV_OC_OpSubgroupBlockWriteINTEL    : I32EnumAttrCase<"OpSubgroupBlockWriteINTEL", 5576>;
+def SPIRV_OC_OpConstantFunctionPointerINTEL : I32EnumAttrCase<"OpConstantFunctionPointerINTEL", 5600>;
+def SPIRV_OC_OpFunctionPointerCallINTEL   : I32EnumAttrCase<"OpFunctionPointerCallINTEL", 5601>;
 def SPIRV_OC_OpAssumeTrueKHR              : I32EnumAttrCase<"OpAssumeTrueKHR", 5630>;
 def SPIRV_OC_OpAtomicFAddEXT              : I32EnumAttrCase<"OpAtomicFAddEXT", 6035>;
 def SPIRV_OC_OpGroupIMulKHR               : I32EnumAttrCase<"OpGroupIMulKHR", 6401>;
@@ -4554,6 +4561,7 @@ def SPIRV_OpcodeAttr :
       SPIRV_OC_OpCooperativeMatrixStoreNV, SPIRV_OC_OpCooperativeMatrixMulAddNV,
       SPIRV_OC_OpCooperativeMatrixLengthNV,
       SPIRV_OC_OpSubgroupBlockReadINTEL, SPIRV_OC_OpSubgroupBlockWriteINTEL,
+      SPIRV_OC_OpConstantFunctionPointerINTEL, SPIRV_OC_OpFunctionPointerCallINTEL,
       SPIRV_OC_OpAssumeTrueKHR, SPIRV_OC_OpAtomicFAddEXT, SPIRV_OC_OpGroupIMulKHR,
       SPIRV_OC_OpGroupFMulKHR,
 

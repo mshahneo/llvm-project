@@ -96,8 +96,8 @@ bool CompositeType::classof(Type type) {
     return isValid(vectorType);
   return llvm::isa<spirv::ArrayType, spirv::CooperativeMatrixType,
                    spirv::CooperativeMatrixNVType, spirv::JointMatrixINTELType,
-                   spirv::MatrixType, spirv::RuntimeArrayType,
-                   spirv::StructType>(type);
+                   spirv::FunctionPointerINTELType, spirv::MatrixType,
+                   spirv::RuntimeArrayType, spirv::StructType>(type);
 }
 
 bool CompositeType::isValid(VectorType type) {
@@ -111,6 +111,10 @@ Type CompositeType::getElementType(unsigned index) const {
       .Case<ArrayType, CooperativeMatrixType, CooperativeMatrixNVType,
             JointMatrixINTELType, RuntimeArrayType, VectorType>(
           [](auto type) { return type.getElementType(); })
+      .Case<FunctionPointerINTELType>([](Type) -> Type {
+        llvm_unreachable(
+            "invalid to query element type for Function Pointer type");
+      })
       .Case<MatrixType>([](MatrixType type) { return type.getColumnType(); })
       .Case<StructType>(
           [index](StructType type) { return type.getElementType(index); })
@@ -139,6 +143,10 @@ unsigned CompositeType::getNumElements() const {
     llvm_unreachable(
         "invalid to query number of elements of spirv::RuntimeArray type");
   }
+  if (llvm::isa<FunctionPointerINTELType>(*this)) {
+    llvm_unreachable("invalid to query number of elements of "
+                     "spirv::FunctionPointerINTEL type");
+  }
   llvm_unreachable("invalid composite type");
 }
 
@@ -152,7 +160,8 @@ void CompositeType::getExtensions(
     std::optional<StorageClass> storage) {
   TypeSwitch<Type>(*this)
       .Case<ArrayType, CooperativeMatrixType, CooperativeMatrixNVType,
-            JointMatrixINTELType, MatrixType, RuntimeArrayType, StructType>(
+            JointMatrixINTELType, MatrixType, RuntimeArrayType, StructType,
+            FunctionPointerINTELType>(
           [&](auto type) { type.getExtensions(extensions, storage); })
       .Case<VectorType>([&](VectorType type) {
         return llvm::cast<ScalarType>(type.getElementType())
@@ -166,7 +175,8 @@ void CompositeType::getCapabilities(
     std::optional<StorageClass> storage) {
   TypeSwitch<Type>(*this)
       .Case<ArrayType, CooperativeMatrixType, CooperativeMatrixNVType,
-            JointMatrixINTELType, MatrixType, RuntimeArrayType, StructType>(
+            JointMatrixINTELType, MatrixType, RuntimeArrayType, StructType,
+            FunctionPointerINTELType>(
           [&](auto type) { type.getCapabilities(capabilities, storage); })
       .Case<VectorType>([&](VectorType type) {
         auto vecSize = getNumElements();
@@ -574,6 +584,75 @@ void PointerType::getCapabilities(
 
   if (auto scCaps = spirv::getCapabilities(getStorageClass()))
     capabilities.push_back(*scCaps);
+}
+
+//===----------------------------------------------------------------------===//
+// FunctionPointerINTELType
+//===----------------------------------------------------------------------===//
+struct spirv::detail::FunctionPointerINTELTypeStorage : public TypeStorage {
+  using KeyTy = std::pair<FunctionType, StorageClass>;
+
+  static FunctionPointerINTELTypeStorage *
+  construct(TypeStorageAllocator &allocator, const KeyTy &key) {
+    return new (allocator.allocate<FunctionPointerINTELTypeStorage>())
+        FunctionPointerINTELTypeStorage(key);
+  }
+
+  bool operator==(const KeyTy &key) const {
+    return key == KeyTy(functionType, storageClass);
+  }
+
+  FunctionPointerINTELTypeStorage(const KeyTy &key)
+      : functionType(key.first), storageClass(key.second) {}
+
+  FunctionType functionType;
+  // Function pointer storage class is always CodeSectionINTEL.
+  StorageClass storageClass = StorageClass::CodeSectionINTEL;
+};
+
+FunctionPointerINTELType
+FunctionPointerINTELType::get(FunctionType functionType,
+                              StorageClass storageClass) {
+  return Base::get(functionType.getContext(), functionType, storageClass);
+}
+
+FunctionPointerINTELType
+FunctionPointerINTELType::get(FunctionType functionType) {
+  return Base::get(functionType.getContext(), functionType,
+                   StorageClass::CodeSectionINTEL);
+}
+
+FunctionType FunctionPointerINTELType::getFunctionType() const {
+  return getImpl()->functionType;
+}
+
+StorageClass FunctionPointerINTELType::getStorageClass() const {
+  return getImpl()->storageClass;
+}
+
+void FunctionPointerINTELType::getExtensions(
+    SPIRVType::ExtensionArrayRefVector &extensions,
+    std::optional<StorageClass> storage) {
+  // We only need one extension (SPV_INTEL_function_pointers), since both the
+  // functionPointer and CodeSection storage class is defined in that extension.
+  // TODO: Do we need to check for extensions of the types that compose the
+  // functiontype??
+  static const Extension exts[] = {Extension::SPV_INTEL_function_pointers};
+  ArrayRef<Extension> ref(exts, std::size(exts));
+  extensions.push_back(ref);
+}
+
+void FunctionPointerINTELType::getCapabilities(
+    SPIRVType::CapabilityArrayRefVector &capabilities,
+    std::optional<StorageClass> storage) {
+  // We only need one capability (FunctionPointersINTEL), since both the
+  // functionPointer and CodeSection storage class is enabled by that
+  // capability.
+  // TODO: Do we need to check for capabilities of the types that compose the
+  // functiontype??
+  static const Capability caps[] = {Capability::FunctionPointersINTEL};
+  ArrayRef<Capability> ref(caps, std::size(caps));
+  capabilities.push_back(ref);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1314,5 +1393,5 @@ void MatrixType::getCapabilities(
 void SPIRVDialect::registerTypes() {
   addTypes<ArrayType, CooperativeMatrixType, CooperativeMatrixNVType, ImageType,
            JointMatrixINTELType, MatrixType, PointerType, RuntimeArrayType,
-           SampledImageType, StructType>();
+           SampledImageType, StructType, FunctionPointerINTELType>();
 }

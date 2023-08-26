@@ -212,6 +212,21 @@ MutableOperandRange FunctionCallOp::getArgOperandsMutable() {
   return getArgumentsMutable();
 }
 
+
+//===----------------------------------------------------------------------===//
+// spirv.INTEL.ConstantFunctionPointer
+//===----------------------------------------------------------------------===//
+LogicalResult INTELConstantFunctionPointerOp::verify() {
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// spirv.INTEL.FunctionPointerCall
+//===----------------------------------------------------------------------===//
+LogicalResult INTELFunctionPointerCallOp::verify() {
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // spirv.mlir.loop
 //===----------------------------------------------------------------------===//

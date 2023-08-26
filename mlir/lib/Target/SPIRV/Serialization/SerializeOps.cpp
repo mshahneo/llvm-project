@@ -412,6 +412,62 @@ Serializer::processGlobalVariableOp(spirv::GlobalVariableOp varOp) {
   return success();
 }
 
+LogicalResult Serializer::processINTELConstantFunctionPointerOp(
+    spirv::INTELConstantFunctionPointerOp op) {
+  SmallVector<uint32_t, 4> operands;
+  SmallVector<StringRef, 2> elidedAttrs;
+  uint32_t resultID = 0;
+  uint32_t resultTypeID = 0;
+
+  // Get the function name and ID
+  auto funcName = op.getFn();
+  auto funcID = getOrCreateFunctionID(funcName);
+
+  // Process the FunctionPointerINTEL type
+  // Generate type of the function.
+  // This is how FuncOp generates/serializes the functionType
+  // uint32_t fnTypeID = 0;
+  // if (failed(processType(op.getLoc(), op.getFunctionType(), fnTypeID)))
+  //   return failure();
+  //
+
+  if (failed(processType(op.getLoc(), op.getType(), resultTypeID))) {
+    return failure();
+  }
+  operands.push_back(resultTypeID);
+
+  // TODO: current implementation creates a function pointer for each
+  // OpConstantFunctionPointerINTEL, even if the pointer is to the same
+  // function. Will need to optimize it so that only one is created for each
+  // function. But first have to confirm this with the IGC team. Get the
+  // function pointer if it has already been defined in the module
+  if ((resultID = getValueID(op.getResult()))) {
+    llvm::errs() << "Found Value ID for Function Pointer : " << resultID
+                 << "\n";
+  }
+  if (!(resultID = getValueID(op.getResult()))) {
+    resultID = getNextID();
+    valueIDMap[op.getResult()] = resultID;
+  }
+  llvm::errs() << "Result ID for Function Pointer : " << op.getResult() << ":"
+               << resultID << "\n";
+  operands.push_back(resultID);
+  operands.push_back(funcID);
+
+  // This attribute should always be CodeSectionINTEL
+  // auto attr = op->getAttr(spirv::attributeName<spirv::StorageClass>());
+  // if (attr) {
+  //   operands.push_back(
+  //       static_cast<uint32_t>(cast<spirv::StorageClassAttr>(attr).getValue()));
+  // }
+  // elidedAttrs.push_back(spirv::attributeName<spirv::StorageClass>());
+
+  encodeInstructionInto(typesGlobalValues,
+                        spirv::Opcode::OpConstantFunctionPointerINTEL,
+                        operands);
+  return success();
+}
+
 LogicalResult Serializer::processSelectionOp(spirv::SelectionOp selectionOp) {
   // Assign <id>s to all blocks so that branches inside the SelectionOp can
   // resolve properly.
@@ -671,6 +727,37 @@ Serializer::processOp<spirv::FunctionCallOp>(spirv::FunctionCallOp op) {
     valueIDMap[op.getResult(0)] = funcCallID;
 
   encodeInstructionInto(functionBody, spirv::Opcode::OpFunctionCall, operands);
+  return success();
+}
+
+template <>
+LogicalResult Serializer::processOp<spirv::INTELFunctionPointerCallOp>(
+    spirv::INTELFunctionPointerCallOp op) {
+  // auto funcName = op.getCallee();
+  uint32_t resTypeID = 0;
+  auto fnPtr = op.getFnPtr();
+
+  Type resultTy = op.getNumResults() ? *op.result_type_begin() : getVoidType();
+  if (failed(processType(op.getLoc(), resultTy, resTypeID)))
+    return failure();
+
+  // auto funcID = getOrCreateFunctionID(funcName);
+  auto fnPtrID = getValueID(fnPtr);
+  auto funcPtrCallID = getNextID();
+  SmallVector<uint32_t, 8> operands{resTypeID, funcPtrCallID, fnPtrID};
+
+  for (auto value : op.getFuncArguments()) {
+    auto valueID = getValueID(value);
+    assert(valueID &&
+           "cannot find a value for spirv.INTEL.FunctionPointerCall");
+    operands.push_back(valueID);
+  }
+
+  if (!isa<NoneType>(resultTy))
+    valueIDMap[op.getResult(0)] = funcPtrCallID;
+
+  encodeInstructionInto(functionBody, spirv::Opcode::OpFunctionPointerCallINTEL,
+                        operands);
   return success();
 }
 

@@ -222,7 +222,8 @@ LogicalResult Serializer::processDecoration(Location loc, uint32_t resultID,
   case spirv::Decoration::LinkageAttributes: {
     // Get the value of the Linkage Attributes
     // e.g., LinkageAttributes=["linkageName", linkageType].
-    auto linkageAttr = llvm::dyn_cast<spirv::LinkageAttributesAttr>(attr.getValue());
+    auto linkageAttr =
+        llvm::dyn_cast<spirv::LinkageAttributesAttr>(attr.getValue());
     auto linkageName = linkageAttr.getLinkageName();
     auto linkageType = linkageAttr.getLinkageType().getValue();
     // Encode the Linkage Name (string literal to uint32_t).
@@ -519,6 +520,22 @@ LogicalResult Serializer::prepareBasicType(
         return emitError(loc, "cannot decorate ")
                << pointeeStruct << " with Block decoration";
     }
+
+    return success();
+  }
+
+  // Handle FunctionPointerINTELType.
+  if (auto funcPtrINTELType = dyn_cast<spirv::FunctionPointerINTELType>(type)) {
+    uint32_t functionTypeID = 0;
+
+    if (failed(processTypeImpl(loc, funcPtrINTELType.getFunctionType(),
+                               functionTypeID, serializationCtx)))
+      return failure();
+
+    typeEnum = spirv::Opcode::OpTypePointer;
+    operands.push_back(
+        static_cast<uint32_t>(funcPtrINTELType.getStorageClass()));
+    operands.push_back(functionTypeID);
 
     return success();
   }
@@ -1186,6 +1203,9 @@ LogicalResult Serializer::processOperation(Operation *opInst) {
       })
       .Case([&](spirv::UndefOp op) { return processUndefOp(op); })
       .Case([&](spirv::VariableOp op) { return processVariableOp(op); })
+      .Case([&](spirv::INTELConstantFunctionPointerOp op) {
+        return processINTELConstantFunctionPointerOp(op);
+      })
 
       // Then handle all the ops that directly mirror SPIR-V instructions with
       // auto-generated methods.

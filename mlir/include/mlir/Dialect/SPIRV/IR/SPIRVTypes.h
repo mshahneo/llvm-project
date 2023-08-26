@@ -37,6 +37,7 @@ struct PointerTypeStorage;
 struct RuntimeArrayTypeStorage;
 struct SampledImageTypeStorage;
 struct StructTypeStorage;
+struct FunctionPointerINTELTypeStorage;
 
 } // namespace detail
 
@@ -204,6 +205,27 @@ public:
   static PointerType get(Type pointeeType, StorageClass storageClass);
 
   Type getPointeeType() const;
+
+  StorageClass getStorageClass() const;
+
+  void getExtensions(SPIRVType::ExtensionArrayRefVector &extensions,
+                     std::optional<StorageClass> storage = std::nullopt);
+  void getCapabilities(SPIRVType::CapabilityArrayRefVector &capabilities,
+                       std::optional<StorageClass> storage = std::nullopt);
+};
+
+// SPIR-V INTEL Function pointer type
+class FunctionPointerINTELType
+    : public Type::TypeBase<FunctionPointerINTELType, CompositeType,
+                            detail::FunctionPointerINTELTypeStorage> {
+public:
+  using Base::Base;
+
+  static FunctionPointerINTELType get(FunctionType functionType,
+                                      StorageClass storageClass);
+  static FunctionPointerINTELType get(FunctionType functionType);
+
+  FunctionType getFunctionType() const;
 
   StorageClass getStorageClass() const;
 

@@ -424,6 +424,52 @@ static Type parseJointMatrixType(SPIRVDialect const &dialect,
                                    matrixLayout);
 }
 
+// storage-class ::= `CodeSectionINTEL`
+// function-pointer-intel-type ::= `!spirv.INTEL.functionptr` `<`function-type
+// `,` storage-class `>`
+//                                                       `,` layout `,` scope`>`
+static Type parseFunctionPointerINTELType(SPIRVDialect const &dialect,
+                                          DialectAsmParser &parser) {
+  if (parser.parseLess())
+    return Type();
+
+  ::mlir::FunctionType functionType;
+  if (parser.parseType(functionType))
+    return Type();
+
+  // auto functionType = parseAndVerifyType(dialect, parser);
+  // if (!functionType)
+  //   return Type();
+
+  // TODO: verify if all the types of the arguments and results are allowed in
+  // SPIR-V dialect
+  // :llvm::ArrayRef<::mlir::Type> argumentsTypes = functionType.getInputs();
+  // ::llvm::ArrayRef<::mlir::Type> allResultTypes = functionType.getResults();
+  // for (auto argType : argumentsTypes) {
+  //   if (!parseAndVerifyType(dialect, parser)) {
+  //     parser.emitError(parser.getCurrentLocation(), "invalid type for SPIR-V:
+  //     ")
+  //         << argType;
+  //   }
+  // }
+
+  StringRef storageClassSpec;
+  SMLoc storageClassLoc = parser.getCurrentLocation();
+  if (parser.parseComma() || parser.parseKeyword(&storageClassSpec))
+    return Type();
+
+  auto storageClass = symbolizeStorageClass(storageClassSpec);
+  if (storageClass != StorageClass::CodeSectionINTEL) {
+    parser.emitError(storageClassLoc, "only CodeSectionINTEL is allowed for "
+                                      "intel funtion pointer type, but found: ")
+        << storageClassSpec;
+    return Type();
+  }
+  if (parser.parseGreater())
+    return Type();
+  return FunctionPointerINTELType::get(functionType, *storageClass);
+}
+
 // TODO: Reorder methods to be utilities first and parse*Type
 // methods in alphabetical order
 //
@@ -845,6 +891,8 @@ Type SPIRVDialect::parseType(DialectAsmParser &parser) const {
     return parseStructType(*this, parser);
   if (keyword == "matrix")
     return parseMatrixType(*this, parser);
+  if (keyword == "INTEL.functionptr")
+    return parseFunctionPointerINTELType(*this, parser);
   parser.emitError(parser.getNameLoc(), "unknown SPIR-V type: ") << keyword;
   return Type();
 }
@@ -869,6 +917,11 @@ static void print(RuntimeArrayType type, DialectAsmPrinter &os) {
 
 static void print(PointerType type, DialectAsmPrinter &os) {
   os << "ptr<" << type.getPointeeType() << ", "
+     << stringifyStorageClass(type.getStorageClass()) << ">";
+}
+
+static void print(FunctionPointerINTELType type, DialectAsmPrinter &os) {
+  os << "INTEL.functionptr<" << type.getFunctionType() << ", "
      << stringifyStorageClass(type.getStorageClass()) << ">";
 }
 
@@ -960,9 +1013,9 @@ static void print(MatrixType type, DialectAsmPrinter &os) {
 void SPIRVDialect::printType(Type type, DialectAsmPrinter &os) const {
   TypeSwitch<Type>(type)
       .Case<ArrayType, CooperativeMatrixType, CooperativeMatrixNVType,
-            JointMatrixINTELType, PointerType, RuntimeArrayType, ImageType,
-            SampledImageType, StructType, MatrixType>(
-          [&](auto type) { print(type, os); })
+            JointMatrixINTELType, PointerType, FunctionPointerINTELType,
+            RuntimeArrayType, ImageType, SampledImageType, StructType,
+            MatrixType>([&](auto type) { print(type, os); })
       .Default([](Type) { llvm_unreachable("unhandled SPIR-V type"); });
 }
 
