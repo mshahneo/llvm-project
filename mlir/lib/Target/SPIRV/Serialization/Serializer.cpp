@@ -167,6 +167,15 @@ uint32_t Serializer::getOrCreateFunctionID(StringRef fnName) {
   return funcID;
 }
 
+// uint32_t Serializer::getOrCreateFunctionPointerINTELID(StringRef fnName) {
+//   auto funcPtrINTELID = funcPointerINTELIDMap.lookup(fnName);
+//   if (!funcPtrINTELID) {
+//     funcPtrINTELID = getNextID();
+//     funcPointerINTELIDMap[fnName] = funcPtrINTELID;
+//   }
+//   return funcPtrINTELID;
+// }
+
 void Serializer::processCapability() {
   for (auto cap : module.getVceTriple()->getCapabilities())
     encodeInstructionInto(capabilities, spirv::Opcode::OpCapability,

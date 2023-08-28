@@ -16,11 +16,13 @@ spirv.module Logical GLSL450 requires #spirv.vce<v1.0, [Shader], []> {
     // CHECK: spirv.CopyMemory "Function" %{{.*}}, "Function" %{{.*}} : f32
     spirv.CopyMemory "Function" %0, "Function" %1 : f32
     %arg = spirv.Constant dense<[2, 3]> : vector<2xi32>
-    %result = spirv.INTEL.FunctionPointerCall %3(%arg) : (!spirv.INTEL.functionptr<(vector<2xi32>) -> vector<2xi32>, CodeSectionINTEL>, (vector<2xi32>)) -> vector<2xi32>
+    %result = spirv.INTEL.FunctionPointerCall %4(%arg) : (!spirv.INTEL.functionptr<(vector<2xi32>) -> vector<2xi32>, CodeSectionINTEL>, (vector<2xi32>)) -> vector<2xi32>
     spirv.Return
   }
   spirv.func @duplicate_func_ptr() "None" {
     %5 = spirv.INTEL.ConstantFunctionPointer @foo : !spirv.INTEL.functionptr<(vector<2xi32>) -> vector<2xi32>, CodeSectionINTEL>
+    %arg = spirv.Constant dense<[2, 3]> : vector<2xi32>
+    %result = spirv.INTEL.FunctionPointerCall %5(%arg) : (!spirv.INTEL.functionptr<(vector<2xi32>) -> vector<2xi32>, CodeSectionINTEL>, (vector<2xi32>)) -> vector<2xi32>
     spirv.Return
   }
 }

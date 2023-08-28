@@ -94,9 +94,18 @@ private:
     return funcIDMap.lookup(fnName);
   }
 
+  uint32_t getFunctionPointerINTELID(StringRef fnName) const {
+    return funcPointerINTELIDMap.lookup(fnName);
+  }
+
   /// Gets the <id> for the function with the given name. Assigns the next
   /// available <id> if the function haven't been deserialized.
   uint32_t getOrCreateFunctionID(StringRef fnName);
+
+  /// Gets the <id> for the INTEL function pointer of function with the given
+  /// name. Assigns the next available <id> if the INTEL function pointer
+  /// haven't been deserialized.
+  uint32_t getOrCreateFunctionPointerINTELID(StringRef fnName);
 
   void processCapability();
 
@@ -129,7 +138,8 @@ private:
   LogicalResult processFuncOp(spirv::FuncOp op);
 
   /// Processes a SPIR-V ConstantFunctionPointerINTEL op.
-  LogicalResult processINTELConstantFunctionPointerOp(spirv::INTELConstantFunctionPointerOp op);
+  LogicalResult processINTELConstantFunctionPointerOp(
+      spirv::INTELConstantFunctionPointerOp op);
 
   LogicalResult processVariableOp(spirv::VariableOp op);
 
@@ -397,6 +407,10 @@ private:
 
   /// Map from FuncOps name to <id>s.
   llvm::StringMap<uint32_t> funcIDMap;
+
+  /// Map from function name to <id>s of FunctionPointeINTEL. Since, in a SPIR-V
+  /// module there can only be one function pointer to a function.
+  llvm::StringMap<uint32_t> funcPointerINTELIDMap;
 
   /// Map from blocks to their <id>s.
   DenseMap<Block *, uint32_t> blockIDMap;

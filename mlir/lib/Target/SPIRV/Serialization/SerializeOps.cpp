@@ -422,45 +422,24 @@ LogicalResult Serializer::processINTELConstantFunctionPointerOp(
   // Get the function name and ID
   auto funcName = op.getFn();
   auto funcID = getOrCreateFunctionID(funcName);
-
-  // Process the FunctionPointerINTEL type
-  // Generate type of the function.
-  // This is how FuncOp generates/serializes the functionType
-  // uint32_t fnTypeID = 0;
-  // if (failed(processType(op.getLoc(), op.getFunctionType(), fnTypeID)))
-  //   return failure();
-  //
-
   if (failed(processType(op.getLoc(), op.getType(), resultTypeID))) {
     return failure();
   }
   operands.push_back(resultTypeID);
 
-  // TODO: current implementation creates a function pointer for each
-  // OpConstantFunctionPointerINTEL, even if the pointer is to the same
-  // function. Will need to optimize it so that only one is created for each
-  // function. But first have to confirm this with the IGC team. Get the
-  // function pointer if it has already been defined in the module
-  if ((resultID = getValueID(op.getResult()))) {
-    llvm::errs() << "Found Value ID for Function Pointer : " << resultID
-                 << "\n";
-  }
-  if (!(resultID = getValueID(op.getResult()))) {
-    resultID = getNextID();
+  // De-duplicate FunctionPointerINTEL for the same function
+  if ((resultID = getFunctionPointerINTELID(funcName))) {
+    llvm::errs() << "Duplicate function pointer \n";
     valueIDMap[op.getResult()] = resultID;
+    return success();
   }
-  llvm::errs() << "Result ID for Function Pointer : " << op.getResult() << ":"
-               << resultID << "\n";
+  // FunctionPointerINTEL has not been taken for this function before
+  resultID = getNextID();
+  valueIDMap[op.getResult()] = resultID;
+  funcPointerINTELIDMap[funcName] = resultID;
+
   operands.push_back(resultID);
   operands.push_back(funcID);
-
-  // This attribute should always be CodeSectionINTEL
-  // auto attr = op->getAttr(spirv::attributeName<spirv::StorageClass>());
-  // if (attr) {
-  //   operands.push_back(
-  //       static_cast<uint32_t>(cast<spirv::StorageClassAttr>(attr).getValue()));
-  // }
-  // elidedAttrs.push_back(spirv::attributeName<spirv::StorageClass>());
 
   encodeInstructionInto(typesGlobalValues,
                         spirv::Opcode::OpConstantFunctionPointerINTEL,
