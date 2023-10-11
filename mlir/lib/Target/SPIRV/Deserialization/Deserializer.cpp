@@ -281,10 +281,11 @@ LogicalResult spirv::Deserializer::processDecoration(ArrayRef<uint32_t> words) {
     // 3 + ceildiv(strlen(name), 4).
     unsigned wordIndex = 2;
     auto linkageName = spirv::decodeStringLiteral(words, wordIndex).str();
+    auto linkageNameAttr = opBuilder.getStringAttr(linkageName);
     auto linkageTypeAttr = opBuilder.getAttr<::mlir::spirv::LinkageTypeAttr>(
         static_cast<::mlir::spirv::LinkageType>(words[wordIndex++]));
     auto linkageAttr = opBuilder.getAttr<::mlir::spirv::LinkageAttributesAttr>(
-        linkageName, linkageTypeAttr);
+        linkageNameAttr, linkageTypeAttr);
     decorations[words[0]].set(symbol, llvm::dyn_cast<Attribute>(linkageAttr));
     break;
   }

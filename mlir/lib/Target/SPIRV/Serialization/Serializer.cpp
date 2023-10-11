@@ -224,7 +224,7 @@ LogicalResult Serializer::processDecoration(Location loc, uint32_t resultID,
     // e.g., LinkageAttributes=["linkageName", linkageType].
     auto linkageAttr =
         llvm::dyn_cast<spirv::LinkageAttributesAttr>(attr.getValue());
-    auto linkageName = linkageAttr.getLinkageName();
+    auto linkageName = linkageAttr.getLinkageName().getValue();
     auto linkageType = linkageAttr.getLinkageType().getValue();
     // Encode the Linkage Name (string literal to uint32_t).
     spirv::encodeStringLiteralInto(args, linkageName);
