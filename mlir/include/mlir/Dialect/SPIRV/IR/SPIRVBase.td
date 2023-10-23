@@ -4234,6 +4234,9 @@ class SPIRV_MatrixOrCoopMatrixOf<Type type> :
 def SPIRV_ScalarOrVector : AnyTypeOf<[SPIRV_Scalar, SPIRV_Vector]>;
 def SPIRV_ScalarOrVectorOrPtr : AnyTypeOf<[SPIRV_ScalarOrVector, SPIRV_AnyPtr]>;
 
+def SPIRV_VectorOrJointMatrix : AnyTypeOf<[SPIRV_Vector, SPIRV_AnyJointMatrix]>;
+
+
 class SPIRV_Vec4<Type type> : VectorOfLengthAndType<[4], [type]>;
 def SPIRV_IntVec4 : SPIRV_Vec4<SPIRV_Integer>;
 def SPIRV_IOrUIVec4 : SPIRV_Vec4<SPIRV_SignlessOrUnsignedInt>;
