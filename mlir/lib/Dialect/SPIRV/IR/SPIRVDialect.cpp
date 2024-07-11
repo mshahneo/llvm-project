@@ -187,9 +187,12 @@ static Type parseAndVerifyType(SPIRVDialect const &dialect,
       parser.emitError(typeLoc, "only 1-D vector allowed but found ") << t;
       return Type();
     }
-    if (t.getNumElements() > 4) {
+    // Number of elements should be between [2 - 2^63 -1],
+    // since getNumElements() returns an unsigned, the upper limit check is
+    // unnecessary
+    if (t.getNumElements() < 2) {
       parser.emitError(
-          typeLoc, "vector length has to be less than or equal to 4 but found ")
+          typeLoc, "vector length has to be between [2 - 2^63 -1] but found ")
           << t.getNumElements();
       return Type();
     }
@@ -364,7 +367,8 @@ static Type parseCooperativeMatrixType(SPIRVDialect const &dialect,
 
 // joint-matrix-type ::= `!spirv.jointmatrix` `<`rows `x` columns `x`
 // element-type
-//                                                       `,` layout `,` scope`>`
+//                                                       `,` layout `,` scope
+//                                                       `,` use`>`
 static Type parseJointMatrixType(SPIRVDialect const &dialect,
                                  DialectAsmParser &parser) {
   if (parser.parseLess())
@@ -391,10 +395,14 @@ static Type parseJointMatrixType(SPIRVDialect const &dialect,
   if (parser.parseComma() ||
       spirv::parseEnumKeywordAttr(scope, parser, "scope <id>"))
     return Type();
+  MatrixUse matrixUse;
+  if (parser.parseComma() ||
+      parseEnumKeywordAttr(matrixUse, parser, "matrixUse <id>"))
+    return Type();
   if (parser.parseGreater())
     return Type();
   return JointMatrixINTELType::get(elementTy, scope, dims[0], dims[1],
-                                   matrixLayout);
+                                   matrixLayout, matrixUse);
 }
 
 // TODO: Reorder methods to be utilities first and parse*Type
@@ -890,7 +898,8 @@ static void print(JointMatrixINTELType type, DialectAsmPrinter &os) {
   os << "jointmatrix<" << type.getRows() << "x" << type.getColumns() << "x";
   os << type.getElementType() << ", "
      << stringifyMatrixLayout(type.getMatrixLayout());
-  os << ", " << stringifyScope(type.getScope()) << ">";
+  os << ", " << stringifyScope(type.getScope()) << ", "
+     << stringifyMatrixUse(type.getMatrixUse()) << ">";
 }
 
 static void print(MatrixType type, DialectAsmPrinter &os) {
@@ -939,6 +948,10 @@ LogicalResult SPIRVDialect::verifyOperationAttribute(Operation *op,
   } else if (symbol == spirv::getTargetEnvAttrName()) {
     if (!llvm::isa<spirv::TargetEnvAttr>(attr))
       return op->emitError("'") << symbol << "' must be a spirv::TargetEnvAttr";
+  } else if (symbol == spirv::getExecutionModeFuncAttrName()) {
+    if (!llvm::isa<spirv::ExecutionModeFuncAttributeAttr>(attr))
+      return op->emitError("'")
+             << symbol << "' must be a spirv::ExecutionModeFuncAttributeAttr";
   } else {
     return op->emitError("found unsupported '")
            << symbol << "' attribute on operation";

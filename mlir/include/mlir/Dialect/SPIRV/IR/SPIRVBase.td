@@ -4032,15 +4032,28 @@ def SPIRV_SamplerUseAttr: SPIRV_I32EnumAttr<
   "image_sampler_use_info",
   [SPIRV_ISUI_SamplerUnknown, SPIRV_ISUI_NeedSampler, SPIRV_ISUI_NoSampler]>;
 
-def SPIRV_ML_ColumnMajor : I32EnumAttrCase<"ColumnMajor", 0>;
-def SPIRV_ML_RowMajor    : I32EnumAttrCase<"RowMajor", 1>;
-def SPIRV_ML_PackedA     : I32EnumAttrCase<"PackedA", 2>;
-def SPIRV_ML_PackedB     : I32EnumAttrCase<"PackedB", 3>;
+// Change the layout parameter to IGC spec, the currnet MLIR version
+// does not match the IGC spec, IGC spec has been updated
+// https://github.com/MrSidims/llvm/blob/private/MrSidims/add-matrix-use/sycl/doc/design/spirv-extensions/SPV_INTEL_joint_matrix.asciidoc
 
-def SPIRV_MatrixLayoutAttr :
-    SPIRV_I32EnumAttr<"MatrixLayout", "valid SPIR-V MatrixLayout", "matrixLayout", [
-      SPIRV_ML_ColumnMajor, SPIRV_ML_RowMajor, SPIRV_ML_PackedA, SPIRV_ML_PackedB
-    ]>;
+def SPIRV_ML_RowMajor     : I32EnumAttrCase<"RowMajor", 0>;
+def SPIRV_ML_ColumnMajor  : I32EnumAttrCase<"ColumnMajor", 1>;
+def SPIRV_ML_Packed       : I32EnumAttrCase<"Packed", 2>;
+def SPIRV_ML_Unused     : I32EnumAttrCase<"Unused", 3>;
+
+ def SPIRV_MatrixLayoutAttr  :
+     SPIRV_I32EnumAttr<"MatrixLayout", "valid SPIR-V MatrixLayout", "matrixLayout", [
+     SPIRV_ML_RowMajor, SPIRV_ML_ColumnMajor, SPIRV_ML_Packed, SPIRV_ML_Unused
+     ]>;
+
+def SPIRV_ML_MATRIX_A     : I32EnumAttrCase<"MatrixA", 0>;
+def SPIRV_ML_MATRIX_B     : I32EnumAttrCase<"MatrixB", 1>;
+def SPIRV_ML_MATRIX_ACC   : I32EnumAttrCase<"Accumulator", 2>;
+
+def SPIRV_MatrixUseAttr  :
+    SPIRV_I32EnumAttr<"MatrixUse", "valid SPIR-V MatrixUse", "matrixUse", [
+      SPIRV_ML_MATRIX_A, SPIRV_ML_MATRIX_B, SPIRV_ML_MATRIX_ACC
+     ]>;
 
 // Cooperative Matrix Use for the SPV_KHR_cooperative_matrix extension.
 def SPIRV_KHR_CMU_MatrixA   : I32EnumAttrCase<"MatrixA", 0>;
@@ -4138,7 +4151,12 @@ def SPIRV_Int32 : TypeAlias<I32, "Int32">;
 def SPIRV_Float32 : TypeAlias<F32, "Float32">;
 def SPIRV_Float : FloatOfWidths<[16, 32, 64]>;
 def SPIRV_Float16or32 : FloatOfWidths<[16, 32]>;
-def SPIRV_Vector : VectorOfLengthAndType<[2, 3, 4, 8, 16],
+// Remove the vector size restriction
+// Although the vector size can be upto (2^64-1), uint64
+// In tablegen, int is signed int, hence using the upper
+// limit of int64 (2^63-1) rather than uint64, it should serve the purpose
+// for all practical cases
+def SPIRV_Vector : VectorOfLengthRangeAndType<[2, 0x7FFFFFFFFFFFFFFF],
                                        [SPIRV_Bool, SPIRV_Integer, SPIRV_Float]>;
 // Component type check is done in the type parser for the following SPIR-V
 // dialect-specific types so we use "Any" here.
@@ -4189,7 +4207,7 @@ class SPIRV_JointMatrixOfType<list<Type> allowedTypes> :
     "Joint Matrix">;
 
 class SPIRV_VectorOf<Type type> :
-    VectorOfLengthAndType<[2, 3, 4, 8,16], [type]>;
+    VectorOfLengthRangeAndType<[2, 0x7FFFFFFFFFFFFFFF], [type]>;
 
 class SPIRV_ScalarOrVectorOf<Type type> :
     AnyTypeOf<[type, SPIRV_VectorOf<type>]>;

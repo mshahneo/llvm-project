@@ -251,8 +251,9 @@ LogicalResult spirv::Deserializer::processDecoration(ArrayRef<uint32_t> words) {
         symbol, FPFastMathModeAttr::get(opBuilder.getContext(),
                                         static_cast<FPFastMathMode>(words[2])));
     break;
-  case spirv::Decoration::DescriptorSet:
+  case spirv::Decoration::Alignment:
   case spirv::Decoration::Binding:
+  case spirv::Decoration::DescriptorSet:
     if (words.size() != 3) {
       return emitError(unknownLoc, "OpDecorate with ")
              << decorationName << " needs a single integer literal";
@@ -297,6 +298,7 @@ LogicalResult spirv::Deserializer::processDecoration(ArrayRef<uint32_t> words) {
     decorations[words[0]].set(symbol, llvm::dyn_cast<Attribute>(linkageAttr));
     break;
   }
+  case spirv::Decoration::Constant:
   case spirv::Decoration::Aliased:
   case spirv::Decoration::AliasedPointer:
   case spirv::Decoration::Block:
@@ -311,6 +313,10 @@ LogicalResult spirv::Deserializer::processDecoration(ArrayRef<uint32_t> words) {
   case spirv::Decoration::Restrict:
   case spirv::Decoration::RestrictPointer:
   case spirv::Decoration::NoContraction:
+  case spirv::Decoration::SingleElementVectorINTEL:
+  case spirv::Decoration::VectorComputeCallableFunctionINTEL:
+  case spirv::Decoration::VectorComputeFunctionINTEL:
+  case spirv::Decoration::VectorComputeVariableINTEL:
     if (words.size() != 2) {
       return emitError(unknownLoc, "OpDecoration with ")
              << decorationName << "needs a single target <id>";
@@ -321,6 +327,7 @@ LogicalResult spirv::Deserializer::processDecoration(ArrayRef<uint32_t> words) {
     // it is needed for many validation rules.
     decorations[words[0]].set(symbol, opBuilder.getUnitAttr());
     break;
+  case spirv::Decoration::FuncParamIOKindINTEL:
   case spirv::Decoration::Location:
   case spirv::Decoration::SpecId:
     if (words.size() != 3) {
@@ -1019,7 +1026,7 @@ LogicalResult spirv::Deserializer::processCooperativeMatrixTypeKHR(
 
 LogicalResult
 spirv::Deserializer::processJointMatrixType(ArrayRef<uint32_t> operands) {
-  if (operands.size() != 6) {
+  if (operands.size() != 7) {
     return emitError(unknownLoc, "OpTypeJointMatrix must have element "
                                  "type and row x column parameters");
   }
@@ -1028,6 +1035,14 @@ spirv::Deserializer::processJointMatrixType(ArrayRef<uint32_t> operands) {
   if (!elementTy) {
     return emitError(unknownLoc, "OpTypeJointMatrix references undefined <id> ")
            << operands[1];
+  }
+
+  auto matrixUse =
+      spirv::symbolizeMatrixUse(getConstantInt(operands[6]).getInt());
+  if (!matrixUse) {
+    return emitError(unknownLoc,
+                     "OpTypeJointMatrix references undefined Use <id> ")
+           << operands[6];
   }
 
   auto scope = spirv::symbolizeScope(getConstantInt(operands[5]).getInt());
@@ -1040,14 +1055,15 @@ spirv::Deserializer::processJointMatrixType(ArrayRef<uint32_t> operands) {
       spirv::symbolizeMatrixLayout(getConstantInt(operands[4]).getInt());
   if (!matrixLayout) {
     return emitError(unknownLoc,
-                     "OpTypeJointMatrix references undefined scope <id> ")
+                     "OpTypeJointMatrix references undefined Layout <id> ")
            << operands[4];
   }
   unsigned rows = getConstantInt(operands[2]).getInt();
   unsigned columns = getConstantInt(operands[3]).getInt();
 
-  typeMap[operands[0]] = spirv::JointMatrixINTELType::get(
-      elementTy, scope.value(), rows, columns, matrixLayout.value());
+  typeMap[operands[0]] =
+      spirv::JointMatrixINTELType::get(elementTy, scope.value(), rows, columns,
+                                       matrixLayout.value(), matrixUse.value());
   return success();
 }
 

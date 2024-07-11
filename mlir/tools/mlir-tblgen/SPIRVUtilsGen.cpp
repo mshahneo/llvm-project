@@ -523,7 +523,7 @@ static mlir::GenRegistration
 constexpr llvm::StringLiteral constantIdEnumAttrs[] = {
     "SPIRV_ScopeAttr", "SPIRV_KHR_CooperativeMatrixUseAttr",
     "SPIRV_KHR_CooperativeMatrixLayoutAttr", "SPIRV_MemorySemanticsAttr",
-    "SPIRV_MatrixLayoutAttr"};
+    "SPIRV_MatrixLayoutAttr", "SPIRV_MatrixUseAttr"};
 
 /// Generates code to serialize attributes of a SPIRV_Op `op` into `os`. The
 /// generates code extracts the attribute with name `attrName` from

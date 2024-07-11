@@ -245,8 +245,7 @@ def XeGPU_PrefetchNdOp : XeGPU_Op<"prefetch_nd", []> {
 }
 
 
-def XeGPU_LoadNdOp : XeGPU_Op<"load_nd", [AllElementTypesMatch<["value", "TensorDesc"]>,
-                                         AllElementCountsMatch<["value", "TensorDesc"]>]> {
+def XeGPU_LoadNdOp : XeGPU_Op<"load_nd", [AllElementTypesMatch<["value", "TensorDesc"]>]> {
   let summary = "loads a n-D block from memory (represented by TensorDesc)"
                 "to registers (represented by vector)";
   let description = [{
@@ -275,8 +274,9 @@ def XeGPU_LoadNdOp : XeGPU_Op<"load_nd", [AllElementTypesMatch<["value", "Tensor
   }];
 
   let arguments = (ins XeGPU_TensorDesc: $TensorDesc,
-                       OptionalAttr<I64Attr>: $vnni_axis,
+                       OptionalAttr<UnitAttr>: $packed,
                        OptionalAttr<DenseI64ArrayAttr>: $transpose,
+                       OptionalAttr<I32Attr>: $transpose_bit_width,
                        OptionalAttr<XeGPU_CacheHintAttr>: $l1_hint,
                        OptionalAttr<XeGPU_CacheHintAttr>: $l2_hint,
                        OptionalAttr<XeGPU_CacheHintAttr>: $l3_hint);
@@ -428,43 +428,25 @@ def XeGPU_CreateDescOp: XeGPU_Op<"create_tdesc", [Pure, ViewLikeOpInterface]> {
   }];
 
   let arguments = (ins XeGPU_BaseAddrType: $source,
-                       Variadic<Index>: $offsets,
-                       DenseI64ArrayAttr: $const_offsets,
+                       XeGPU_OffsetType: $offsets,
                        DefaultValuedAttr<I64Attr, "1">: $chunk_size);
   let results = (outs XeGPU_TensorDesc:$TensorDesc);
 
-  let builders = [
-    OpBuilder<(ins "xegpu::TensorDescType": $TensorDesc, "Value": $source,
-                   "llvm::ArrayRef<OpFoldResult>": $offsets,
-                   CArg<"uint32_t", "1"> : $chunk_size)>,
-  ];
-
   let assemblyFormat = [{
-    $source
-    custom<DynamicIndexList>($offsets, $const_offsets)
-    attr-dict `:`  type($source) `->` qualified(type($TensorDesc))
+    $source `,` $offsets attr-dict `:`  type($source) `,` type($offsets) `->` qualified(type($TensorDesc))
   }];
 
-  let extraClassDeclaration = extraBaseClassDeclaration # [{
+  let extraClassDeclaration = [{
     xegpu::TensorDescType getTensorDescType() {
       return getTensorDesc().getType();
     }
 
-    SmallVector<OpFoldResult> getMixedOffsets() {
-      Builder b(getContext());
-      return getMixedValues(getConstOffsets(), getOffsets(), b);
-    }
-
     size_t getNumOffsets() {
-      return getMixedOffsets().size();
+      return getOffsets().getType().getShape()[0];
     }
 
     mlir::Value getViewSource() { return getSource(); }
 
-    OpFoldResult getOffset(unsigned idx) {
-      assert(idx < getNumOffsets() && "Invalid out of bound access.");
-      return getMixedOffsets()[idx];
-    }
   }];
 
   let hasVerifier = 1;
@@ -628,34 +610,23 @@ def XeGPU_UpdateOffsetOp: XeGPU_Op<"update_offset",
   }];
 
   let arguments = (ins XeGPU_TensorDesc: $TensorDesc,
-                       Variadic<Index>: $offsets,
-                       DenseI64ArrayAttr: $const_offsets);
+                       XeGPU_OffsetType: $offsets);
+
   let results = (outs XeGPU_TensorDesc: $result);
 
-  let extraClassDeclaration = extraBaseClassDeclaration # [{
+  let extraClassDeclaration = [{
     xegpu::TensorDescType getTensorDescType() {
       return getTensorDesc().getType();
     }
 
-    SmallVector<OpFoldResult> getMixedOffsets() {
-      Builder b(getContext());
-      return getMixedValues(getConstOffsets(), getOffsets(), b);
-    }
-
     size_t getNumOffsets() {
-      return getMixedOffsets().size();
-    }
-
-    OpFoldResult getOffset(unsigned idx) {
-      assert(idx < getNumOffsets() && "Invalid out of bound access.");
-      return getMixedOffsets()[idx];
+      return getOffsets().getType().getShape()[0];
     }
   }];
 
   let assemblyFormat = [{
-    $TensorDesc `,`
-    custom<DynamicIndexList>($offsets, $const_offsets)
-    attr-dict `:` qualified(type($TensorDesc))
+    $TensorDesc `,` $offsets attr-dict `:`
+    qualified(type($TensorDesc)) `,` type($offsets) `->` qualified(type($result))
   }];
 }
 
@@ -668,14 +639,11 @@ def XeGPU_DpasOp : XeGPU_Op<"dpas", [Pure, AllElementTypesMatch<["lhs", "rhs"]>]
     data type, the matrices are `A: vector<8x16xf16>`, `B: vector<16x16xf16>`,
     and `C/D: vector<8x16xf32>`. Besides the matrix size requirements, DPAS
     also requires A and B to be loaded with the required data layout. Specially,
-    VNNI layout is required for B operand. It is achieved via setting `vnni_axis = 0`
-    of the corresponding `load_nd` operator. To keep both operands as 3D vector,
-    operand A is loaded via setting `vnni_axis = 1` without impacting the
-    physical layouts change in register. Due to the VNNI transformation, A and B operands
-    are represented as 3D vector, with the last dimension representing the VNNI factor,
-    which is computed as `32/bit_width_of_elem_type`. Therefore, `A: vector<8x16xf16>`
-    is represented as `A: vector<8x8x2xf16>`, and `B: vector<16x16xf16>` is
-    represented as `B: vector<8x16x2xf16>`.
+    VNNI layout is required for B operand. It is achieved via adding `packed`
+    attribute to the `load_nd` operator.  Due to the VNNI transformation, B operands
+    can be represented as a 3D vector, with the last dimension representing the VNNI
+    factor, which is computed as `32/bit_width_of_elem_type`. Thus, `B: vector<16x16xf16>`
+    can be represented as `B: vector<8x16x2xf16>`.
 
     Note: on PVC, the hardware can perform load with VNNI transformation when data
           element type is 16-bit or lower precision, taking 2 or 4 elements from
@@ -739,7 +707,7 @@ def XeGPU_AtomicRMWOp: XeGPU_Op<"atomic_rmw", [Pure,
 
   let assemblyFormat = [{
     $kind $tensorDesc `,` $mask `,` $value attr-dict `:`
-    type($tensorDesc) `,` type($mask) `,` type($value) `->` type($result)
+    qualified(type($tensorDesc)) `,` type($mask) `,` type($value) `->` type($result)
   }];
 }
 
@@ -807,5 +775,14 @@ def XeGPU_FenceOp: XeGPU_Op<"fence", []> {
   let assemblyFormat = [{`memory_kind` `=` `` $memory_kind `,` `fence_scope` `=` `` $fence_scope attr-dict}];
   let extraClassDeclaration = extraBaseClassDeclaration;
 }
+
+def XeGPU_CompileHintOp
+  : XeGPU_Op<"compile_hint", []> {
+      let summary = "prevents the compiler from scheduling.";
+
+      let assemblyFormat = [{
+        attr-dict
+      }];
+  }
 
 #endif // MLIR_DIALECT_XEGPU_IR_XEGPUOPS_TD

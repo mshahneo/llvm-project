@@ -1460,8 +1460,10 @@ Block *ConversionPatternRewriterImpl::applySignatureConversion(
 
       // Legalize the argument output type.
       Type outputType = origOutputType;
-      if (Type legalOutputType = converter->convertType(outputType))
-        outputType = legalOutputType;
+      if (converter) {
+        if (Type legalOutputType = converter->convertType(outputType))
+          outputType = legalOutputType;
+      }
 
       newArg = buildUnresolvedArgumentMaterialization(
           newBlock, origArg.getLoc(), replArgs, origOutputType, outputType,

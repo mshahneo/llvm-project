@@ -100,9 +100,11 @@ bool CompositeType::classof(Type type) {
 }
 
 bool CompositeType::isValid(VectorType type) {
-  return type.getRank() == 1 &&
-         llvm::is_contained({2, 3, 4, 8, 16}, type.getNumElements()) &&
-         llvm::isa<ScalarType>(type.getElementType());
+  // Number of elements should be between [2 - 2^63 -1],
+  // since getNumElements() returns an unsigned, the upper limit check is
+  // unnecessary
+  return type.getRank() == 1 && mlir::isa<ScalarType>(type.getElementType()) &&
+         type.getNumElements() >= 2;
 }
 
 Type CompositeType::getElementType(unsigned index) const {
@@ -170,7 +172,21 @@ void CompositeType::getCapabilities(
       .Case<VectorType>([&](VectorType type) {
         auto vecSize = getNumElements();
         if (vecSize == 8 || vecSize == 16) {
-          static const Capability caps[] = {Capability::Vector16};
+          static const Capability caps[] = {Capability::Vector16,
+                                            Capability::VectorAnyINTEL};
+          ArrayRef<Capability> ref(caps, std::size(caps));
+          capabilities.push_back(ref);
+        }
+        // If the vector size is between (2 - (2^63 - 1))
+        // and not of any size 2, 3, 4, 8, and 16
+        // VectorAnyIntel Capability must be present
+        // for the SPIR-V to be valid
+        llvm::SmallVector<uint32_t, 5> allowedVecRange = {2, 3, 4, 8, 16};
+        if (vecSize >= 2 &&
+            (llvm::none_of(allowedVecRange, [&](uint32_t allowedVecSize) {
+              return vecSize == allowedVecSize;
+            }))) {
+          static const Capability caps[] = {Capability::VectorAnyINTEL};
           ArrayRef<Capability> ref(caps, std::size(caps));
           capabilities.push_back(ref);
         }
@@ -271,7 +287,8 @@ void CooperativeMatrixType::getCapabilities(
 //===----------------------------------------------------------------------===//
 
 struct spirv::detail::JointMatrixTypeStorage : public TypeStorage {
-  using KeyTy = std::tuple<Type, unsigned, unsigned, MatrixLayout, Scope>;
+  using KeyTy =
+      std::tuple<Type, unsigned, unsigned, MatrixLayout, Scope, MatrixUse>;
 
   static JointMatrixTypeStorage *construct(TypeStorageAllocator &allocator,
                                            const KeyTy &key) {
@@ -280,26 +297,29 @@ struct spirv::detail::JointMatrixTypeStorage : public TypeStorage {
   }
 
   bool operator==(const KeyTy &key) const {
-    return key == KeyTy(elementType, rows, columns, matrixLayout, scope);
+    return key ==
+           KeyTy(elementType, rows, columns, matrixLayout, scope, matrixUse);
   }
 
   JointMatrixTypeStorage(const KeyTy &key)
       : elementType(std::get<0>(key)), rows(std::get<1>(key)),
-        columns(std::get<2>(key)), scope(std::get<4>(key)),
-        matrixLayout(std::get<3>(key)) {}
+        columns(std::get<2>(key)), matrixLayout(std::get<3>(key)),
+        scope(std::get<4>(key)), matrixUse(std::get<5>(key)) {}
 
   Type elementType;
   unsigned rows;
   unsigned columns;
   Scope scope;
   MatrixLayout matrixLayout;
+  MatrixUse matrixUse;
 };
 
 JointMatrixINTELType JointMatrixINTELType::get(Type elementType, Scope scope,
                                                unsigned rows, unsigned columns,
-                                               MatrixLayout matrixLayout) {
+                                               MatrixLayout matrixLayout,
+                                               MatrixUse matrixUse) {
   return Base::get(elementType.getContext(), elementType, rows, columns,
-                   matrixLayout, scope);
+                   matrixLayout, scope, matrixUse);
 }
 
 Type JointMatrixINTELType::getElementType() const {
@@ -314,6 +334,10 @@ unsigned JointMatrixINTELType::getColumns() const { return getImpl()->columns; }
 
 MatrixLayout JointMatrixINTELType::getMatrixLayout() const {
   return getImpl()->matrixLayout;
+}
+
+MatrixUse JointMatrixINTELType::getMatrixUse() const {
+  return getImpl()->matrixUse;
 }
 
 void JointMatrixINTELType::getExtensions(

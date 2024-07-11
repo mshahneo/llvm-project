@@ -182,8 +182,8 @@ LogicalResult LoadNdOp::verify() {
   auto tdescTy = getTensorDescType();
   auto valueTy = getType();
 
-  if (tdescTy.getRank() != 2)
-    return emitOpError("Expecting a 2D TensorDesc.\n");
+  if (tdescTy.getRank() > 2)
+    return emitOpError("Expecting a 1D/2D TensorDesc.\n");
 
   if (tdescTy.getScattered())
     return emitOpError("Expects a non-scattered TensorDesc.\n");
@@ -212,10 +212,20 @@ LogicalResult LoadNdOp::verify() {
       emitWarning("Invalid transpose attr. It is ignored.");
   }
 
-  if (getVnniAxis()) {
-    auto axis = getVnniAxis().value();
+  if (getPacked()) { // packed implies a true vnni transform
+    const int axis = 0;
     auto vnni_factor = valueShape.back();
     tdescShape[axis] /= vnni_factor;
+    tdescShape.push_back(vnni_factor);
+  }
+
+  if (getTransposeBitWidth()) {
+    auto bitWidth = getTransposeBitWidth().value();
+    if (bitWidth != 32)
+      return emitOpError("Invalid bit width for transpose.");
+    auto vnni_factor = valueShape.back();
+    // transpose_bit_width imply a vnni transform on axis 0
+    tdescShape[0] /= vnni_factor;
     tdescShape.push_back(vnni_factor);
   }
 
@@ -239,8 +249,8 @@ LogicalResult StoreNdOp::verify() {
   auto dstTy = getTensorDescType(); // Tile
   auto valTy = getValueType();      // Vector
 
-  if (dstTy.getRank() != 2)
-    return emitOpError("Expecting a 2D TensorDesc.\n");
+  if (dstTy.getRank() > 2)
+    return emitOpError("Expecting a 1D/2D TensorDesc.\n");
 
   if (dstTy.getScattered())
     return emitOpError("Expects a non-scattered TensorDesc.\n");
@@ -278,17 +288,6 @@ LogicalResult UpdateNdOffsetOp::verify() {
 //===----------------------------------------------------------------------===//
 // XeGPU_CreateDescOp
 //===----------------------------------------------------------------------===//
-void CreateDescOp::build(OpBuilder &builder, OperationState &state,
-                         TensorDescType TensorDesc, Value source,
-                         llvm::ArrayRef<OpFoldResult> offsets,
-                         uint32_t chunk_size) {
-  llvm::SmallVector<int64_t> staticOffsets;
-  llvm::SmallVector<Value> dynamicOffsets;
-  dispatchIndexOpFoldResults(offsets, dynamicOffsets, staticOffsets);
-  build(builder, state, TensorDesc, source, dynamicOffsets, staticOffsets,
-        chunk_size);
-}
-
 LogicalResult CreateDescOp::verify() {
   auto tdescTy = getTensorDescType();
   auto chunkSize = getChunkSize();
@@ -413,18 +412,15 @@ LogicalResult DpasOp::verify() {
   int64_t lhsRank = getLhsType().getRank();
   int64_t rhsRank = getRhsType().getRank();
 
-  if (lhsRank != rhsRank || lhsRank != 3)
-    return emitOpError(
-        "lhs and rhs rank does not match for dpas op, or their rank is not 3.");
-
-  if (getAcc() && getAccType() != getResultType())
-    return emitOpError("Accumulator and Result for dpas op should have the "
-                       "same type (both shape and element type).");
+  // if (lhsRank != 2 || (rhsRank != 2 && rhsRank != 3))
+  //   return emitOpError("expecting lhs to be a 2D vector, and rhs to be either 2D or 3D (vnni transformed) vector.");
 
   auto lhsShape = getLhsType().getShape();
   auto rhsShape = getRhsType().getShape();
-  if (lhsShape[1] != rhsShape[0] || lhsShape[2] != rhsShape[2])
-    return emitOpError("K-dimension or vnni-factor mismatch.");
+  auto aK = lhsRank == 3 ? lhsShape[1] * lhsShape[2] : lhsShape[1];
+  auto bK = rhsRank == 3 ? rhsShape[0] * rhsShape[2] : rhsShape[0];
+  if (aK != bK)
+    return emitOpError("K-dimension mismatch.");
 
   return success();
 }

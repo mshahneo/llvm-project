@@ -243,8 +243,10 @@ LogicalResult Serializer::processDecorationAttr(Location loc, uint32_t resultID,
     }
     return emitError(loc, "expected FPFastMathModeAttr attribute for ")
            << stringifyDecoration(decoration);
+  case spirv::Decoration::Alignment:
   case spirv::Decoration::Binding:
   case spirv::Decoration::DescriptorSet:
+  case spirv::Decoration::FuncParamIOKindINTEL:
   case spirv::Decoration::Location:
     if (auto intAttr = dyn_cast<IntegerAttr>(attr)) {
       args.push_back(intAttr.getValue().getZExtValue());
@@ -267,6 +269,7 @@ LogicalResult Serializer::processDecorationAttr(Location loc, uint32_t resultID,
            << stringifyDecoration(decoration);
   case spirv::Decoration::Aliased:
   case spirv::Decoration::AliasedPointer:
+  case spirv::Decoration::Constant:
   case spirv::Decoration::Flat:
   case spirv::Decoration::NonReadable:
   case spirv::Decoration::NonWritable:
@@ -277,6 +280,10 @@ LogicalResult Serializer::processDecorationAttr(Location loc, uint32_t resultID,
   case spirv::Decoration::Restrict:
   case spirv::Decoration::RestrictPointer:
   case spirv::Decoration::NoContraction:
+  case spirv::Decoration::SingleElementVectorINTEL:
+  case spirv::Decoration::VectorComputeCallableFunctionINTEL:
+  case spirv::Decoration::VectorComputeFunctionINTEL:
+  case spirv::Decoration::VectorComputeVariableINTEL:
     // For unit attributes and decoration attributes, the args list
     // has no values so we do nothing.
     if (isa<UnitAttr, DecorationAttr>(attr))
@@ -668,7 +675,8 @@ LogicalResult Serializer::prepareBasicType(
         operands, elementTypeID, getConstantOp(jointMatrixType.getRows()),
         getConstantOp(jointMatrixType.getColumns()),
         getConstantOp(static_cast<uint32_t>(jointMatrixType.getMatrixLayout())),
-        getConstantOp(static_cast<uint32_t>(jointMatrixType.getScope())));
+        getConstantOp(static_cast<uint32_t>(jointMatrixType.getScope())),
+        getConstantOp(static_cast<uint32_t>(jointMatrixType.getMatrixUse())));
     return success();
   }
 
