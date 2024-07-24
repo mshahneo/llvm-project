@@ -468,8 +468,13 @@ LogicalResult Serializer::prepareBasicType(
   if (auto floatType = dyn_cast<FloatType>(type)) {
     typeEnum = spirv::Opcode::OpTypeFloat;
     operands.push_back(floatType.getWidth());
+    // Add extra parameter (FPEncoding) to opTypeFloat for bf16 data type
+    if (floatType.isBF16())
+      operands.push_back(static_cast<uint32_t>(spirv::FPEncoding::BFloat16KHR));
     return success();
   }
+
+  // @mshahneo: Add serialization for BF16 types
 
   if (auto vectorType = dyn_cast<VectorType>(type)) {
     uint32_t elementTypeID = 0;

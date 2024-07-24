@@ -809,14 +809,20 @@ LogicalResult spirv::Deserializer::processType(spirv::Opcode opcode,
     typeMap[operands[0]] = IntegerType::get(context, operands[1], sign);
   } break;
   case spirv::Opcode::OpTypeFloat: {
-    if (operands.size() != 2)
-      return emitError(unknownLoc, "OpTypeFloat must have bitwidth parameter");
+    if (operands.size() < 2 || operands.size() > 3)
+      return emitError(
+          unknownLoc,
+          "OpTypeFloat must have bitwidth parameter and optional FP Encoding");
 
     Type floatTy;
     switch (operands[1]) {
-    case 16:
-      floatTy = opBuilder.getF16Type();
+    case 16: {
+      if (operands.size() == 3 && operands[2] == 0)
+        floatTy = opBuilder.getBF16Type();
+      else
+        floatTy = opBuilder.getF16Type();
       break;
+    }
     case 32:
       floatTy = opBuilder.getF32Type();
       break;

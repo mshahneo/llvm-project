@@ -171,8 +171,10 @@ static Type parseAndVerifyType(SPIRVDialect const &dialect,
 
   // Check other allowed types
   if (auto t = llvm::dyn_cast<FloatType>(type)) {
-    if (type.isBF16()) {
-      parser.emitError(typeLoc, "cannot use 'bf16' to compose SPIR-V types");
+    if (!ScalarType::isValid(t)) {
+      parser.emitError(typeLoc,
+                       "only 16/32/64-bit float type allowed but found ")
+          << type;
       return Type();
     }
   } else if (auto t = llvm::dyn_cast<IntegerType>(type)) {
