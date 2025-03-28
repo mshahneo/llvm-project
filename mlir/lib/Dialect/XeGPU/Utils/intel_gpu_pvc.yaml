@@ -1,0 +1,205 @@
+# This file contains the architecture-specific information for the Intel GPU codename PVC.
+
+
+---
+# The target architecture name.
+arch: intel_gpu_pvc
+
+# EU (VetorEngine) overview
+number_of_eus_per_xe_core: 8
+number_of_threads_per_eu: [8, 4] # Number of threads in [small, large] grf_mode.
+
+
+shared_memory:
+  # Shared memory size in bytes.
+  size: 524288
+  # Shared memory alignment in bytes.
+  alignment: 64
+
+# General Register File (GRF) information.
+grf_bitwidth: 512 # GRF bitwidth in bits.
+grf_mode: [small, large]
+grf_count_per_thread: [128, 256] # Number of GRFs in [small, large] grf_mode.
+
+
+# Instruction set information.
+
+instruction:
+  dpas:
+    instruction_name: dpas
+    instruction_description: "Dot Product Accumulate Systolic (DPAS) is a matrix multiply-add operation"
+    instruction_opcode: "0x83"
+    instruction_functional_unit: matrix
+    instruction_type: simd
+    instruction_scope: sub_group
+    instruction_unit_of_computation: tile
+
+    # Information about the instruction.
+    systolic_depth: [8]
+    repeat_count: [1, 8]  # [min, max]
+    execution_size: [16, 16]  # [min, max]
+    ops_per_channel:
+      # number_of_bits_per_element: ops_per_channel
+      19: 1 # tf32 has 19bits
+      16: 2 # f16/bf16 has 16bits
+      8: 4 # i8/u8/f8 has 8bits
+      4: 8 # i4/u4/f4 has 4bits
+      2: 8 # i2/u2 has 2bits
+    supported_types:
+    # [Dst, Acc (src0), A (src1), B (src2)]
+      - [f16, f16, f16, f16]
+      - [f32, f16, f16, f16]
+      - [f16, f32, f16, f16]
+      - [f32, f32, f16, f16]
+      - [bf16, bf16, bf16, bf16]
+      - [f32, bf16, bf16, bf16]
+      - [bf16, f32, bf16, bf16]
+      - [f32, f32, bf16, bf16]
+      - [f32, f32, tf32, tf32]
+    matrix_size:
+      M:
+        all_bitwidth: [1, 2, 3, 4, 5, 6, 7, 8]
+      K: # data type bitwidth: K size
+        32: [8]
+        16: [16]
+        8: [32]
+        4: [64]
+        2: [64]
+      N:
+        all_bitwidth: [16]
+
+  # Load 2D instruction. 2D Block Loads message reads a rectangular block of memory in to GRF.
+  # Upto 32 GRFs (=2048 bytes) can be read using this message.
+  # Block_width times array_size should not exceed 64 bytes.
+  load_2d:
+    instruction_name: load_2d
+    instruction_description: "2D Block Load instruction reads a rectangular block of memory in to GRF."
+    instruction_opcode: nan
+    instruction_functional_unit: load
+    instruction_type: simd
+    instruction_scope: sub_group
+    instruction_unit_of_computation: tile
+    instruction_type: memory
+
+    # Information about the instruction.
+    memory_type: global  # global=ugm
+    memory_access_type: read
+    # supported_types: [i8, i16, i32, i64, ui8, ui16, ui32, ui64, si8, si16, si32, si64, f8, f16, bf16, f32, f64]
+    supported_types_bitwidth: [8, 16, 32, 64]
+    alignment:
+        8: 8
+        16: 16
+        32: 32
+        64: 64
+
+    # @TODO: Alternate design: We could do the following in C++ code using Restriction.
+    # alignment: data_type_bitwidth
+
+    # tile_size: [height, width, array_len]
+    # height: [min, max]
+    # width: [min, max]
+    # array_len: [supported array lengths]
+    tile_size: # bitwidth: [height, width, array_len]
+      transpose:
+      32:
+          height: [1, 32]
+          width: [1, 16]
+          array_len: [1]
+          max_width_with_array_len: 16 # width * array_len <= 16
+      64:
+          height: [1, 32]
+          width: [1, 8]
+          array_len: [1]
+          max_width_with_array_len: 8 # width * array_len <= 8
+      vnni:
+        8:
+          height: [4, 32]
+          width: [4, 16]
+          array_len: [1, 2, 4]
+          max_width_with_array_len: 64 # width * array_len <= 64
+        16:
+          height: [2, 32]
+          width: [2, 16]
+          array_len: [1, 2, 4]
+          max_width_with_array_len: 32 # width * array_len <= 32
+      default:
+        8:
+          height: [1, 32]
+          width: [4, 64]
+          array_len: [1, 2, 4]
+          max_width_with_array_len: 64 # width * array_len <= 64
+        16:
+          height: [1, 32]
+          width: [2, 32]
+          array_len: [1, 2, 4]
+          max_width_with_array_len: 32 # width * array_len <= 32
+        32:
+          height: [1, 32]
+          width: [1, 16]
+          array_len: [1, 2]
+          max_width_with_array_len: 16 # width * array_len <= 16
+        64:
+          height: [1, 32]
+          width: [1, 8]
+          array_len: [1]
+          max_width_with_array_len: 8 # width * array_len <= 8
+    max_tile_height: 32
+    max_tile_width: 64 # 64 bytes. width X array_length <= 64 bytes.
+    min_surface_pitch: 64 # 64 bytes.
+
+  # Store 2D instruction. 2D Block Store message writes a rectangular block of GRF to memory.
+  # Upto 512 bytes of GRFs are can be written using this message.
+  # Block_width times array_len should not exceed 64 bytes.
+  store_2d:
+    instruction_name: store_2d
+    instruction_description: "2D Block Store instruction writes a rectangular block of to memory from GRF."
+    instruction_opcode: 0x00
+    instruction_functional_unit: store
+    instruction_type: simd
+    instruction_scope: sub_group
+    instruction_unit_of_computation: tile
+    instruction_type: memory
+
+    # Information about the instruction.
+    memory_type: global  # global=ugm
+    memory_access_type: write
+    # supported_types: [i8, i16, i32, i64, ui8, ui16, ui32, ui64, si8, si16, si32, si64, f8, f16, bf16, f32, f64]
+    supported_types_bitwidth: [8, 16, 32, 64]
+    alignment:
+        8: 8
+        16: 16
+        32: 32
+        64: 64
+
+    # @TODO: Alternate design: We could do the following in C++ code using Restriction.
+    # alignment: data_type_bitwidth
+
+    # tile_size: [height, width, array_len]
+    # height: [min, max]
+    # width: [min, max]
+    # array_len: [supported array lengths]
+    tile_size: # bitwidth: [height, width, array_len]
+      default:
+        8:
+          height: [1, 8]
+          width: [4, 64]
+          array_len: [1]
+          max_width_with_array_len: 64 # width * array_len <= 64
+        16:
+          height: [1, 8]
+          width: [2, 32]
+          array_len: [1]
+          max_width_with_array_len: 32 # width * array_len <= 32
+        32:
+          height: [1, 8]
+          width: [1, 16]
+          array_len: [1]
+          max_width_with_array_len: 16 # width * array_len <= 16
+        64:
+          height: [1, 8]
+          width: [1, 8]
+          array_len: [1]
+          max_width_with_array_len: 8 # width * array_len <= 8
+    max_tile_height: 32
+    max_tile_width: 64 # 64 bytes. width X array_length <= 64 bytes.
+    min_surface_pitch: 64 # 64 bytes.
