@@ -97,4 +97,3 @@ struct LoadStorePrefetch2DInstruction : public Instruction {
 } // namespace mlir
 
 #endif // MLIR_DIALECT_XEGPU_UTILS_INTEL_GPU_PVC_H
-//===--- IntelGpuPVC.h ---------------------------------------*- C++ -*-===//
