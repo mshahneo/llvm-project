@@ -203,3 +203,60 @@ module @module_multi_level_call attributes {gpu.container_module} {
 }
 
 
+// CHECK: module @tensor_type_example attributes {gpu.container_module} {
+module @tensor_type_example attributes {gpu.container_module} {
+  // CHECK: gpu.module @tensor_type_gpu_module {
+  gpu.module @tensor_type_gpu_module attributes {} {
+
+    // CHECK: func.func @test_tensor_type(%arg0: tensor<10x10xi16>) -> tensor<10x10xi16> {
+    func.func @test_tensor_type(%arg0: tensor<10x10xbf16>) -> tensor<10x10xbf16> attributes {} {
+      // CHECK: %[[C0:.*]] = arith.constant 0 : index
+      %c0 = arith.constant 0 : index
+      // CHECK: %[[C1:.*]] = arith.constant 1 : index
+      %c1 = arith.constant 1 : index
+      // CHECK: %[[EXTRACTED:.*]] = tensor.extract %arg0[%[[C0]], %[[C0]]] : tensor<10x10xi16>
+      %extracted = tensor.extract %arg0[%c0, %c0] : tensor<10x10xbf16>
+      // CHECK: %[[INSERTED:.*]] = tensor.insert %[[EXTRACTED]] into %arg0[%[[C1]], %[[C1]]] : tensor<10x10xi16>
+      %inserted = tensor.insert %extracted into %arg0[%c1, %c1] : tensor<10x10xbf16>
+      // CHECK: return %[[INSERTED]] : tensor<10x10xi16>
+      return %inserted : tensor<10x10xbf16>
+    }
+
+    // CHECK: func.func @arith_and_tenesor_type(%arg0: tensor<10x10xi16>, %arg1: tensor<10x10xi16>) -> tensor<10x10xi16> {
+    func.func @arith_and_tenesor_type(
+        %arg0: tensor<10x10xbf16>,
+        %arg1: tensor<10x10xbf16>
+    ) -> tensor<10x10xbf16> attributes {} {
+      // CHECK: %[[C0:.*]] = arith.constant 0 : index
+      %c0 = arith.constant 0 : index
+
+      // CHECK: %[[E0:.*]] = tensor.extract %arg0[%[[C0]], %[[C0]]] : tensor<10x10xi16>
+      %elem0 = tensor.extract %arg0[%c0, %c0] : tensor<10x10xbf16>
+      // CHECK: %[[B0:.*]] = arith.bitcast %[[E0]] : i16 to bf16
+
+      // CHECK: %[[E1:.*]] = tensor.extract %arg1[%[[C0]], %[[C0]]] : tensor<10x10xi16>
+      %elem1 = tensor.extract %arg1[%c0, %c0] : tensor<10x10xbf16>
+      // CHECK: %[[B1:.*]] = arith.bitcast %[[E1]] : i16 to bf16
+
+      // CHECK: %[[ADD1:.*]] = arith.addf %[[B0]], %[[B1]] : bf16
+      %result = arith.addf %elem0, %elem1 : bf16
+
+      // CHECK: %[[CALL:.*]] = call @test_tensor_type(%arg0) : (tensor<10x10xi16>) -> tensor<10x10xi16>
+      %func_result = func.call @test_tensor_type(%arg0) : (tensor<10x10xbf16>) -> tensor<10x10xbf16>
+
+      // CHECK: %[[E2:.*]] = tensor.extract %[[CALL]][%[[C0]], %[[C0]]] : tensor<10x10xi16>
+      %elem3 = tensor.extract %func_result[%c0, %c0] : tensor<10x10xbf16>
+      // CHECK: %[[B2:.*]] = arith.bitcast %[[E2]] : i16 to bf16
+
+      // CHECK: %[[ADD2:.*]] = arith.addf %[[ADD1]], %[[B2]] : bf16
+      %result2 = arith.addf %result, %elem3 : bf16
+
+      // CHECK: %[[B3:.*]] = arith.bitcast %[[ADD2]] : bf16 to i16
+      %inserted = tensor.insert %result2 into %arg0[%c0, %c0] : tensor<10x10xbf16>
+
+      // CHECK: %[[INSERT:.*]] = tensor.insert %[[B3]] into %arg0[%[[C0]], %[[C0]]] : tensor<10x10xi16>
+      // CHECK: return %[[INSERT]] : tensor<10x10xi16>
+      return %inserted : tensor<10x10xbf16>
+    }
+  }
+}
