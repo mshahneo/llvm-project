@@ -471,6 +471,15 @@ void mlir::populateImitateUnsupportedTypesTypeConverter(
         if (elemType == src)
           return VectorType::get(vec.getShape(), tgt);
       }
+    } else if (auto tensor = llvm::dyn_cast<RankedTensorType>(type)) {
+      Type elemType = tensor.getElementType();
+      for (auto [src, tgt] : llvm::zip_equal(srcTypes, tgtTypes)) {
+        if (elemType == src)
+          return RankedTensorType::get(tensor.getShape(), tgt);
+      }
+    } else {
+      llvm::errs() << "Type not converted: " << type << "\n";
+      return type; // If no conversion is found, return the original type.
     }
     return type;
   });
@@ -480,9 +489,9 @@ void mlir::populateImitateUnsupportedTypesTypeConverter(
     assert(inputs.size() == 1 && "Expected single input");
     Type inputType = inputs[0].getType();
     if ((resultType.isIntOrIndexOrFloat() || isa<VectorType>(resultType) ||
-         isa<MemRefType>(resultType)) &&
+         isa<MemRefType>(resultType) || isa<RankedTensorType>(resultType)) &&
         (inputType.isIntOrIndexOrFloat() || isa<VectorType>(inputType) ||
-         isa<MemRefType>(inputType))) {
+         isa<MemRefType>(inputType) || isa<RankedTensorType>(inputType))) {
       return builder.create<arith::BitcastOp>(loc, resultType, inputs[0])
           .getResult();
     }
