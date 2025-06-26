@@ -277,6 +277,35 @@ struct SharedMemory {
 //     uint num_matrix_units;
 //     SharedMemory shared_memory;
 // };
+
+// Create a TileLikeOp Interface
+struct TileOpInterface {
+  // Get the supported tiles for the specific data type.
+  // Can provide load/store/prefetch ops supported tile sizes for a specific
+  // uarch
+  virtual DiscreteTile getSupportedTiles(mlir::Type type) = 0;
+
+  // Validate the tile ops restrictions
+  // @param tile, tile to load/store/prefetch
+  // @param surface, surface to load/store/prefetch data from
+  // @param dataType, data type of the data
+  // @param surface_pitch, suface pitch
+  // @param array_len, array length
+  virtual bool validate(Tile tile, Tile surface, mlir::Type dataType,
+                        uint surface_pitch, uint array_len = 1) = 0;
+};
+
+enum class MatrixType { MatrixA, MatrixB, MatrixC, MatrixD };
+struct MatrixOpInterface {
+  virtual bool checkSupportedMMATypes(mlir::Type AType, mlir::Type BType,
+                                      mlir::Type CType, mlir::Type DType) = 0;
+  virtual std::vector<uint> getSupportedM(mlir::Type type) = 0;
+  virtual std::vector<uint> getSupportedK(mlir::Type type) = 0;
+  virtual std::vector<uint> getSupportedN(mlir::Type type) = 0;
+  virtual std::vector<std::pair<unsigned, unsigned>>
+  getSupportedMatrix(mlir::Type type, MatrixType matrixType) = 0;
+};
+
 } // namespace uArch
 } // namespace xegpu
 } // namespace mlir
