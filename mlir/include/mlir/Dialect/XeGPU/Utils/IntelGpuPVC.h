@@ -37,17 +37,25 @@ struct Xe2Plus : public uArch {
 };
 
 // struct to represent DPAS instruction
-struct DPASInstruction : public Instruction {
-  Range systolic_depth;
-  Range repreat_count;
-  Range execution_size;
-  std::map<std::string, uint> ops_per_channel;
-  std::vector<std::vector<std::string>> supported_types;
-  std::map<std::string, std::map<std::string, std::vector<std::string>>>
-      matrix_size;
+struct DPASInstruction : public Instruction, public MatrixOpInterface {
+  // Range systolic_depth;
+  // Range repreat_count;
+  // Range execution_size;
+  // std::map<std::string, uint> ops_per_channel;
+  // std::vector<std::vector<std::string>> supported_types;
+  // std::map<std::string, std::map<std::string, std::vector<std::string>>>
+  //     matrix_size;
 
-  bool checkSupportedDPASTypes(mlir::Type dstType, mlir::Type src0Type,
-                               mlir::Type src1Type, mlir::Type src2Type);
+  // bool checkSupportedDPASTypes(mlir::Type dstType, mlir::Type src0Type,
+  //                              mlir::Type src1Type, mlir::Type src2Type);
+  virtual bool checkSupportedMMATypes(mlir::Type AType, mlir::Type BType,
+                                      mlir::Type CType,
+                                      mlir::Type DType) override;
+  virtual std::vector<uint> getSupportedM(mlir::Type type) override;
+  virtual std::vector<uint> getSupportedK(mlir::Type type) override;
+  virtual std::vector<uint> getSupportedN(mlir::Type type) override;
+  virtual std::vector<std::pair<unsigned, unsigned>>
+  getSupportedMatrix(mlir::Type type, MatrixType matrixType) override;
 };
 
 struct LoadStore2DTileInfo : public RangeTile {
