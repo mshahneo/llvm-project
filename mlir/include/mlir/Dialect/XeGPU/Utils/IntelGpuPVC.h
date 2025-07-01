@@ -24,16 +24,33 @@
 namespace mlir {
 namespace xegpu {
 namespace uArch {
-namespace PVCuArch {
+namespace Xe2Plus {
 struct XeCoreInfo {
   uint num_threads;
   SharedMemory shared_memory;
   uint num_vector_units;
   uint num_matrix_units;
+
+  // Constructor
+  XeCoreInfo(uint num_threads, const SharedMemory &shared_memory,
+             uint num_vector_units, uint num_matrix_units)
+      : num_threads(num_threads), shared_memory(shared_memory),
+        num_vector_units(num_vector_units), num_matrix_units(num_matrix_units) {
+  }
 };
 
 struct Xe2Plus : public uArch {
   XeCoreInfo xe_core;
+  Xe2Plus(const std::string &archName, const std::string &archDescription,
+          const XeCoreInfo &xeCore,
+          const std::vector<uArchHierarchyComponent> &hierarchy = {},
+          const std::map<std::string, RegisterFileInfo> &regInfo = {},
+          const std::vector<CacheInfo> &cacheInfo = {},
+          const std::map<std::string, Instruction *> &instrs = {},
+          const std::vector<Restriction<> *> &restrs = {})
+      : uArch(archName, archDescription, hierarchy, regInfo, cacheInfo, instrs,
+              restrs),
+        xe_core(xeCore) {}
 };
 
 // struct to represent DPAS instruction
@@ -48,6 +65,18 @@ struct DPASInstruction : public Instruction, public MatrixOpInterface {
 
   // bool checkSupportedDPASTypes(mlir::Type dstType, mlir::Type src0Type,
   //                              mlir::Type src1Type, mlir::Type src2Type);
+
+  DPASInstruction()
+      : Instruction("dpas",                     // name
+                    "Dot Product Accumulate",   // description
+                    "0xABCD",                   // opcode
+                    FunctionalUnit::Matrix,     // functional_unit
+                    InstructionType::SIMD,      // type
+                    InstructionScope::Subgroup, // scope
+                    UnitOfComputation::Matrix)  // unit_of_computation
+  {}
+
+  // Override all virtuals from MatrixOpInterface
   virtual bool checkSupportedMMATypes(mlir::Type AType, mlir::Type BType,
                                       mlir::Type CType,
                                       mlir::Type DType) override;
@@ -99,7 +128,51 @@ struct LoadStorePrefetch2DInstruction : public Instruction {
   }
 };
 
+namespace PVCuArch {
+struct PVCuArch : public Xe2Plus {
+  // Maintaines ownership of the instructions owned by PVUarch
+  std::vector<std::unique_ptr<Instruction>> owned_instructions;
+  PVCuArch()
+      : Xe2Plus("pvc",                        // archName
+                "Ponte Vecchio Architecture", // archDescription
+                XeCoreInfo(8, SharedMemory(512 * 1024, 4), 8, 8), // xeCore
+                {/* register_file_info */}, // Optional: empty
+                {/* cache_info */},         // Optional: empty
+                {/* instructions */},       // Optional: empty
+                {/* restrictions */}        // Optional: empty
+        ) {
+    // Initialize uArchHierarchy
+    this->uArch_hierarchy.push_back(uArchHierarchyComponent("thread", 0));
+    this->uArch_hierarchy.push_back(uArchHierarchyComponent("XeCore", 8));
+    this->uArch_hierarchy.push_back(uArchHierarchyComponent("XeSlice", 16));
+    this->uArch_hierarchy.push_back(uArchHierarchyComponent("XeStack", 4));
+    this->uArch_hierarchy.push_back(uArchHierarchyComponent("gpu", 2));
+    // Intialize register file info
+    // GRF
+    this->register_file_info["GRF"] =
+        RegisterFileInfo(64 * 1024,          // size in bits
+                         {"small", "large"}, // GRF modes
+                         {128, 256},         // registers per thread per mode
+                         0,                  // number of banks
+                         0                   // bank size
+        );
+    // Initialize cache info
+    // L1 cache, XeCore level
+    this->cache_info.push_back(
+        CacheInfo(512 * 1024, 64, this->uArch_hierarchy[1]));
+    // L3 cache, XeStack level
+    this->cache_info.push_back(
+        CacheInfo(512 * 1024, 64, this->uArch_hierarchy[3]));
+
+    // Add the instructions
+    auto dpas = std::make_unique<DPASInstruction>();
+    instructions[dpas->name] = dpas.get();
+    owned_instructions.push_back(std::move(dpas));
+  }
+};
 } // namespace PVCuArch
+
+} // namespace Xe2Plus
 } // namespace uArch
 } // namespace xegpu
 } // namespace mlir

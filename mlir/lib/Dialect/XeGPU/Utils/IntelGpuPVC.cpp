@@ -5,18 +5,18 @@
 #include <vector>
 
 using namespace mlir::xegpu::uArch;
-using namespace mlir::xegpu::uArch::PVCuArch;
+using namespace mlir::xegpu::uArch::Xe2Plus;
 
 namespace mlir {
 namespace xegpu {
 namespace uArch {
-namespace PVCuArch {
+namespace Xe2Plus {
 bool DPASInstruction::checkSupportedMMATypes(mlir::Type AType, mlir::Type BType,
                                              mlir::Type CType,
                                              mlir::Type DType) {
   if (AType.isF16() || BType.isF16()) {
     if (AType != BType || (CType && (!CType.isF32() && !CType.isF16())) ||
-        (!DType.isF32() && !DType.isF16()))
+        (!DType.isF32() && !DType.isF16())) {
       llvm::errs()
           << "Unsupported dpas combinations of Dst, Acc, A and B matrices, "
           << "Supported types are:\n"
@@ -24,10 +24,11 @@ bool DPASInstruction::checkSupportedMMATypes(mlir::Type AType, mlir::Type BType,
           << " f, hf   |  f, hf  |   hf  |  hf \n"
           << "AType: " << AType << " BType: " << BType << " CType: " << CType
           << " DType: " << DType;
-    return false;
+      return false;
+    }
   } else if (AType.isBF16() || BType.isBF16()) {
     if (AType != BType || (CType && (!CType.isF32() && !CType.isBF16())) ||
-        (!DType.isF32() && !DType.isBF16()))
+        (!DType.isF32() && !DType.isBF16())) {
       llvm::errs()
           << "Unsupported dpas combinations of Dst, Acc, A and B matrices, "
           << "Supported types are:\n"
@@ -35,10 +36,11 @@ bool DPASInstruction::checkSupportedMMATypes(mlir::Type AType, mlir::Type BType,
           << " f, bf   |  f, bf  |   bf  |  bf \n"
           << "AType: " << AType << " BType: " << BType << " CType: " << CType
           << " DType: " << DType;
-    return false;
+      return false;
+    }
   } else if (AType.isTF32() || BType.isTF32()) {
     if (AType != BType || (CType && (!CType.isF32() && !DType.isF32())) ||
-        (!DType.isF32()))
+        (!DType.isF32())) {
       llvm::errs()
           << "Unsupported dpas combinations of Dst, Acc, A and B matrices, "
           << "Supported types are:\n"
@@ -46,7 +48,8 @@ bool DPASInstruction::checkSupportedMMATypes(mlir::Type AType, mlir::Type BType,
           << "   f     |    f    |  tf32  |  tf32 \n"
           << "AType: " << AType << " BType: " << BType << " CType: " << CType
           << " DType: " << DType;
-    return false;
+      return false;
+    }
   } else if (!(AType.isInteger(2) || AType.isInteger(4) ||
                AType.isInteger(8)) &&
              !(BType.isInteger(2) || BType.isInteger(4) ||
@@ -136,7 +139,7 @@ DPASInstruction::getSupportedMatrix(mlir::Type type, MatrixType matrixType) {
   }
 }
 
-} // namespace PVCuArch
+} // namespace Xe2Plus
 } // namespace uArch
 } // namespace xegpu
 } // namespace mlir

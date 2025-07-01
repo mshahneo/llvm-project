@@ -16,7 +16,10 @@
 
 #include <functional>
 #include <iostream>
+#include <mutex>
+#include <shared_mutex>
 #include <tuple>
+
 namespace mlir {
 namespace xegpu {
 namespace uArch {
@@ -99,6 +102,17 @@ struct Restriction {
   std::any apply() { return std::apply(func, data); }
 };
 
+// Architecture HW component hierarchy to present thread, core, socket ...
+struct uArchHierarchyComponent {
+  std::string name = ""; // optional name of the hierarchy component
+  // no. of lower hierarchy component it contains, e.g., for PVC XeCore it
+  // contains 8 threads, so no_of_component=8
+  uint no_of_component;
+  // Constructor
+  uArchHierarchyComponent(const std::string &name, uint no_of_component)
+      : name(name), no_of_component(no_of_component) {}
+};
+
 // An enum class to represent the functional unit of an instruction
 enum class FunctionalUnit {
   ALU,
@@ -179,6 +193,12 @@ struct Instruction {
   // std::string pipeline;
   // std::string resource;
   // std::string comment;
+  Instruction(std::string name, std::string desc, std::string opcode,
+              FunctionalUnit fu, InstructionType itype, InstructionScope sc,
+              UnitOfComputation uoc)
+      : name(std::move(name)), description(std::move(desc)),
+        opcode(std::move(opcode)), functional_unit(fu), type(itype), scope(sc),
+        unit_of_computation(uoc) {}
 };
 
 // A struct to represent register file information
@@ -189,18 +209,30 @@ struct RegisterFileInfo {
       num_regs_per_thread_per_mode; // number of registers per thread per mode
   uint num_banks;
   uint bank_size;
+
+  // Constructor
+  RegisterFileInfo(uint size, const std::vector<std::string> &mode,
+                   const std::vector<uint> &numRegs, uint num_banks,
+                   uint bank_size)
+      : size(size), mode(mode), num_regs_per_thread_per_mode(numRegs),
+        num_banks(num_banks), bank_size(bank_size) {}
 };
 
 // A struct to represent cache information
 struct CacheInfo {
   uint size;
-  uint associativity;
   uint line_size;
-  uint num_banks;
-  uint bank_size;
-  uint num_ports;
-  uint port_width;
-  uint bank_conflicts;
+  // At which component level the cache is shared
+  uArchHierarchyComponent component;
+  // uint associativity;
+  // uint num_banks;
+  // uint bank_size;
+  // uint num_ports;
+  // uint port_width;
+  // uint bank_conflicts;
+  // Constructor
+  CacheInfo(uint size, uint line_size, const uArchHierarchyComponent &component)
+      : size(size), line_size(line_size), component(component) {}
 };
 
 // A struct to represent the uArch
@@ -225,19 +257,38 @@ struct CacheInfo {
 struct uArch {
   std::string name; // similar to target triple
   std::string description;
+  // Represent the whole uArch hierarchy
+  // For 2 stack Intel PVC it would look something like this:
+  // uArchHierarchy[0] = {thread, 0}
+  // uArchHierarchy[1] = {XeCore, 8}
+  // uArchHierarchy[2] = {XeSlice, 16}
+  // uArchHierarchy[3] = {XeStack, 4}
+  // uArchHierarchy[4] = {gpu, 2}
+  std::vector<uArchHierarchyComponent> uArch_hierarchy;
   // Different kind of regiger file information (e.g., GRF, ARF, etc.)
-  std::vector<RegisterFileInfo> register_file_info;
+  std::map<std::string, RegisterFileInfo> register_file_info;
   // Each level of cache is indexed lower to higher in the vector
   // (e.g., L1 indexed at 0, L2 at 1 and so on) L1, L2, L3, etc.
   std::vector<CacheInfo> cache_info;
-  std::vector<Instruction *> instructions;
+  std::map<std::string, Instruction *> instructions;
   std::vector<Restriction<> *> restrictions;
+
+  // Constructor
+  uArch(const std::string &name, const std::string &description,
+        const std::vector<uArchHierarchyComponent> &uArch_hierarchy = {},
+        const std::map<std::string, RegisterFileInfo> &register_file_info = {},
+        const std::vector<CacheInfo> &cache_info = {},
+        const std::map<std::string, Instruction *> &instructions = {},
+        const std::vector<Restriction<> *> &restrictions = {})
+      : name(name), description(description), uArch_hierarchy(uArch_hierarchy),
+        register_file_info(register_file_info), cache_info(cache_info),
+        instructions(instructions), restrictions(restrictions) {}
 };
 
 // A struct to represent shared memory information
 struct SharedMemory {
-  uint size;
-  uint alignment;
+  uint size;      // in bytes
+  uint alignment; // in bytes
   // @TODO: Add more fields as needed
   // uint latency;
   // uint throughput;
@@ -247,6 +298,9 @@ struct SharedMemory {
   // uint bank_size;
   // uint bank_conflicts;
   // uint num_banks;
+
+  // Constructor
+  SharedMemory(uint size, uint alignment) : size(size), alignment(alignment) {}
 };
 
 // For future use case in Xe4+
@@ -293,6 +347,7 @@ struct TileOpInterface {
   // @param array_len, array length
   virtual bool validate(Tile tile, Tile surface, mlir::Type dataType,
                         uint surface_pitch, uint array_len = 1) = 0;
+  virtual ~TileOpInterface() = default;
 };
 
 enum class MatrixType { MatrixA, MatrixB, MatrixC, MatrixD };
@@ -304,11 +359,75 @@ struct MatrixOpInterface {
   virtual std::vector<uint> getSupportedN(mlir::Type type) = 0;
   virtual std::vector<std::pair<unsigned, unsigned>>
   getSupportedMatrix(mlir::Type type, MatrixType matrixType) = 0;
+
+  virtual ~MatrixOpInterface() = default;
 };
+
+struct uArchMap {
+public:
+  // Singleton instance
+  static uArchMap &instance() {
+    static uArchMap instance;
+    return instance;
+  }
+
+  // Insert or update a key-value pair
+  void insert(const std::string &key, uArch value) {
+    std::unique_lock lock(mutex_);
+    map_[key] = value;
+  }
+
+  // Get a value by key (concurrent safe read)
+  std::optional<uArch> get(const std::string &key) const {
+    std::shared_lock lock(mutex_);
+    auto it = map_.find(key);
+    if (it != map_.end())
+      return it->second;
+    return std::nullopt;
+  }
+
+  // Check if a key exists
+  bool contains(const std::string &key) const {
+    std::shared_lock lock(mutex_);
+    return map_.find(key) != map_.end();
+  }
+
+  // Remove a key
+  bool erase(const std::string &key) {
+    std::unique_lock lock(mutex_);
+    return map_.erase(key) > 0;
+  }
+
+private:
+  uArchMap() = default;
+  uArchMap(const uArchMap &) = delete;
+  uArchMap &operator=(const uArchMap &) = delete;
+
+  mutable std::shared_mutex mutex_;
+  std::map<std::string, uArch> map_;
+};
+
+// std::unordered_map<std::string, uArch> uArchMap;
+// std::shared_mutex uArchMapMutex;
+
+// void getuArch(const std::string &key) {
+//   std::shared_lock<std::shared_mutex> lock(uArchMapMutex);
+//   auto it = uArchMap.find(key);
+//   if(it != uArchMap.end())
+//   return *it;
+//   else
+
+//   // safe concurrent read
+// }
+
+// void AdduArch(const std::string &key, uArch &value) {
+//   std::unique_lock<std::shared_mutex> lock(uArchMapMutex);
+
+//   // exclusive write
+// }
 
 } // namespace uArch
 } // namespace xegpu
 } // namespace mlir
 
 #endif // MLIR_DIALECT_XEGPU_UTILS_UARCH_H
-//===--- uArch.h ---------------------------------------*- C++ -*-===//
