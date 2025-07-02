@@ -7,6 +7,5 @@ add_mlir_dialect_library(MLIRXeGPUuArch
   LINK_LIBS PUBLIC
   MLIRIR
   MLIRDialectUtils
-  MLIRXeGPUDialect
 )
 
