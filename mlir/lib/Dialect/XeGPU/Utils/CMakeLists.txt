@@ -1,5 +1,5 @@
 add_mlir_dialect_library(MLIRXeGPUUtils
-  IntelGpuPVC.cpp
+  IntelGpuXe2.cpp
   XeGPUUtils.cpp
 
 
