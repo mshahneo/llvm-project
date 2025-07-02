@@ -11,10 +11,10 @@
 ///
 //
 //===----------------------------------------------------------------------===//
-#ifndef MLIR_DIALECT_XEGPU_UTILS_INTEL_GPU_PVC_H
-#define MLIR_DIALECT_XEGPU_UTILS_INTEL_GPU_PVC_H
+#ifndef MLIR_DIALECT_XEGPU_UTILS_INTEL_GPU_XE2_H
+#define MLIR_DIALECT_XEGPU_UTILS_INTEL_GPU_XE2_H
 
-#include "mlir/Dialect/XeGPU/Utils/uArch.h"
+#include "mlir/Dialect/XeGPU/uArch/uArch.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/TypeUtilities.h"
 #include <map>
@@ -26,14 +26,14 @@ namespace xegpu {
 namespace uArch {
 namespace Xe2Plus {
 struct XeCoreInfo {
-  uint num_threads;
+  uint32_t num_threads;
   SharedMemory shared_memory;
-  uint num_vector_units;
-  uint num_matrix_units;
+  uint32_t num_vector_units;
+  uint32_t num_matrix_units;
 
   // Constructor
-  XeCoreInfo(uint num_threads, const SharedMemory &shared_memory,
-             uint num_vector_units, uint num_matrix_units)
+  XeCoreInfo(uint32_t num_threads, const SharedMemory &shared_memory,
+             uint32_t num_vector_units, uint32_t num_matrix_units)
       : num_threads(num_threads), shared_memory(shared_memory),
         num_vector_units(num_vector_units), num_matrix_units(num_matrix_units) {
   }
@@ -58,7 +58,7 @@ struct DPASInstruction : public Instruction, public MatrixOpInterface {
   // Range systolic_depth;
   // Range repreat_count;
   // Range execution_size;
-  // std::map<std::string, uint> ops_per_channel;
+  // std::map<std::string, uint32_t> ops_per_channel;
   // std::vector<std::vector<std::string>> supported_types;
   // std::map<std::string, std::map<std::string, std::vector<std::string>>>
   //     matrix_size;
@@ -80,15 +80,15 @@ struct DPASInstruction : public Instruction, public MatrixOpInterface {
   virtual bool checkSupportedMMATypes(mlir::Type AType, mlir::Type BType,
                                       mlir::Type CType,
                                       mlir::Type DType) override;
-  virtual std::vector<uint> getSupportedM(mlir::Type type) override;
-  virtual std::vector<uint> getSupportedK(mlir::Type type) override;
-  virtual std::vector<uint> getSupportedN(mlir::Type type) override;
+  virtual std::vector<uint32_t> getSupportedM(mlir::Type type) override;
+  virtual std::vector<uint32_t> getSupportedK(mlir::Type type) override;
+  virtual std::vector<uint32_t> getSupportedN(mlir::Type type) override;
   virtual std::vector<std::pair<unsigned, unsigned>>
   getSupportedMatrix(mlir::Type type, MatrixType matrixType) override;
 };
 
 struct LoadStore2DTileInfo : public RangeTile {
-  std::vector<uint> array_len;
+  std::vector<uint32_t> array_len;
 };
 
 // struct to represent Load2D/Store2D/Prefetch instruction
@@ -96,18 +96,18 @@ struct LoadStorePrefetch2DInstruction : public Instruction {
   MemoryType memory_type;
   MemoryAccessType memory_access_type;
   //   std::vector<std::string> supported_types;
-  std::vector<uint> supported_types_bitwidth;
-  std::map<std::string, uint> alignment;
+  std::vector<uint32_t> supported_types_bitwidth;
+  std::map<std::string, uint32_t> alignment;
   LoadStore2DTileInfo supported_tile_sizes;
-  uint min_surface_pitch;
+  uint32_t min_surface_pitch;
 
   // Validate Array length restriction on a given tile
-  bool validateArrayLenRestriction(Tile tile, uint array_len,
+  bool validateArrayLenRestriction(Tile tile, uint32_t array_len,
                                    mlir::Type dataType) {
 
-    Restriction<Tile, uint, mlir::Type> width_array_len_restriction(
+    Restriction<Tile, uint32_t, mlir::Type> width_array_len_restriction(
         tile, array_len, dataType,
-        [](Tile tile, uint array_len, mlir::Type dataType) {
+        [](Tile tile, uint32_t array_len, mlir::Type dataType) {
           assert(tile.no_of_dims == 2);
           return tile.dims[1] * array_len *
                      (dataType.getIntOrFloatBitWidth() / 8) <=
@@ -118,9 +118,9 @@ struct LoadStorePrefetch2DInstruction : public Instruction {
 
   // Validate Surface Pitch restriction on a given tile
   bool validateSurfacePitchRestriction(Tile tile,
-                                       uint surfacePitch /*in bytes*/) {
-    Restriction<Tile, uint> surface_pitch_restriction(
-        tile, surfacePitch, [](Tile tile, uint surfacePitch) {
+                                       uint32_t surfacePitch /*in bytes*/) {
+    Restriction<Tile, uint32_t> surface_pitch_restriction(
+        tile, surfacePitch, [](Tile tile, uint32_t surfacePitch) {
           assert(tile.no_of_dims == 2);
           return surfacePitch >= 64;
         });
@@ -149,13 +149,14 @@ struct PVCuArch : public Xe2Plus {
     this->uArch_hierarchy.push_back(uArchHierarchyComponent("gpu", 2));
     // Intialize register file info
     // GRF
-    this->register_file_info["GRF"] =
+    this->register_file_info.emplace(
+        "GRF",
         RegisterFileInfo(64 * 1024,          // size in bits
                          {"small", "large"}, // GRF modes
                          {128, 256},         // registers per thread per mode
                          0,                  // number of banks
                          0                   // bank size
-        );
+                         ));
     // Initialize cache info
     // L1 cache, XeCore level
     this->cache_info.push_back(
@@ -221,4 +222,4 @@ struct BMGuArch : public Xe2Plus {
 } // namespace xegpu
 } // namespace mlir
 
-#endif // MLIR_DIALECT_XEGPU_UTILS_INTEL_GPU_PVC_H
+#endif // MLIR_DIALECT_XEGPU_UTILS_INTEL_GPU_XE2_H
