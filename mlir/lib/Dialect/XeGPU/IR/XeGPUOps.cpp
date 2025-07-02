@@ -7,9 +7,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "mlir/Dialect/Arith/Utils/Utils.h"
+#include "mlir/Dialect/DLTI/DLTI.h"
 #include "mlir/Dialect/Utils/IndexingUtils.h"
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/Dialect/XeGPU/IR/XeGPU.h"
+#include "mlir/Dialect/XeGPU/uArch/IntelGpuXe2.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/TypeUtilities.h"
 
@@ -574,6 +576,45 @@ LogicalResult DpasOp::verify() {
 
   if (getAcc() && getAcc().getType() != getResultType())
     return emitOpError("Expecting the acc type to be the same as result.");
+
+  // @uArch: Check if the types are supported for DPAS.
+  Operation *op = getOperation();
+  auto moduleOp = op->getParentOfType<ModuleOp>();
+  if (!moduleOp)
+    llvm::errs() << "No parent module op.\n";
+
+  auto targetDeviceNameAttr = dlti::query(moduleOp, {"GPU", "name"});
+  if (failed(targetDeviceNameAttr))
+    llvm::errs()
+        << "No target device found, skipping target-specific verification\n";
+
+  // Potential usage of uArch in verification.
+  if (succeeded(targetDeviceNameAttr)) {
+    auto targetDeviceNameStr =
+        llvm::dyn_cast<StringAttr>(targetDeviceNameAttr.value()).str();
+    auto targetDeviceArch =
+        mlir::xegpu::uArch::uArchMap::instance().get(targetDeviceNameStr);
+    if (targetDeviceArch) {
+      // @TODO: We should keep the name of the Instructions in one place, since
+      // we use the name of the instruction to find the instruction, it should
+      // be standardized and kept for users to access.
+      auto it = targetDeviceArch->instructions.find("dpas");
+      if (it != targetDeviceArch->instructions.end()) {
+        std::shared_ptr<uArch::Instruction> instr = it->second;
+        std::cout << "Found instruction: " << instr->name << std::endl;
+        auto matrixOp =
+            std::dynamic_pointer_cast<mlir::xegpu::uArch::MatrixOpInterface>(
+                instr);
+        if (matrixOp) {
+          if (!matrixOp->checkSupportedMMATypes(
+                  getLhsType().getElementType(), getRhsType().getElementType(),
+                  getResultType().getElementType(),
+                  getResultType().getElementType()))
+            return emitOpError("Unsupported DPAS types.");
+        }
+      }
+    }
+  }
 
   // SIMT code: the size of the B operand has to be a multiple of 32 bits.
   // It skips the semantic check since lack of architecture information.
