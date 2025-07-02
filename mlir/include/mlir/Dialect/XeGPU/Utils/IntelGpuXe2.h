@@ -172,6 +172,50 @@ struct PVCuArch : public Xe2Plus {
 };
 } // namespace PVCuArch
 
+namespace BMGuArch {
+struct BMGuArch : public Xe2Plus {
+  // Maintaines ownership of the instructions owned by PVUarch
+  std::vector<std::unique_ptr<Instruction>> owned_instructions;
+  BMGuArch()
+      : Xe2Plus("bmg",                     // archName
+                "Battlemage Architecture", // archDescription
+                XeCoreInfo(8, SharedMemory(256 * 1024, 4), 8, 8), // xeCore
+                {/* register_file_info */}, // Optional: empty
+                {/* cache_info */},         // Optional: empty
+                {/* instructions */},       // Optional: empty
+                {/* restrictions */}        // Optional: empty
+        ) {
+    // Initialize uArchHierarchy
+    this->uArch_hierarchy.push_back(uArchHierarchyComponent("thread", 0));
+    this->uArch_hierarchy.push_back(uArchHierarchyComponent("XeCore", 8));
+    this->uArch_hierarchy.push_back(uArchHierarchyComponent("XeSlice", 4));
+    this->uArch_hierarchy.push_back(uArchHierarchyComponent("XeStack", 5));
+    this->uArch_hierarchy.push_back(uArchHierarchyComponent("gpu", 1));
+    // Intialize register file info
+    // GRF
+    this->register_file_info["GRF"] =
+        RegisterFileInfo(64 * 1024,          // size in bits
+                         {"small", "large"}, // GRF modes
+                         {128, 256},         // registers per thread per mode
+                         0,                  // number of banks
+                         0                   // bank size
+        );
+    // Initialize cache info
+    // L1 cache, XeCore level
+    this->cache_info.push_back(
+        CacheInfo(256 * 1024, 64, this->uArch_hierarchy[1]));
+    // L3 cache, XeStack level
+    this->cache_info.push_back(
+        CacheInfo(18 * 1024 * 1024, 256, this->uArch_hierarchy[3]));
+
+    // Add the instructions
+    auto dpas = std::make_unique<DPASInstruction>();
+    instructions[dpas->name] = dpas.get();
+    owned_instructions.push_back(std::move(dpas));
+  }
+};
+} // namespace BMGuArch
+
 } // namespace Xe2Plus
 } // namespace uArch
 } // namespace xegpu
