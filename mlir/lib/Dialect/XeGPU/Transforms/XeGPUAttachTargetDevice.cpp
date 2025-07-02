@@ -67,7 +67,8 @@ void XeGPUAttachTargetDevicePass::runOnOperation() {
   module->setAttr("dlti.target_system_spec", systemSpec);
 
   // Create the uArch object for the target device and add it to the uArchMap
-
+  // We don't have to do it here, we can do it in the Dialect initialization
+  // phase, this is just showing one way of doing it
   if (deviceName == "pvc") {
     auto pvcuArch =
         std::make_shared<mlir::xegpu::uArch::Xe2Plus::PVCuArch::PVCuArch>();

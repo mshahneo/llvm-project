@@ -583,6 +583,7 @@ LogicalResult DpasOp::verify() {
   if (!moduleOp)
     llvm::errs() << "No parent module op.\n";
 
+  // It target device info is not attched, skip the target-specific checks
   auto targetDeviceNameAttr = dlti::query(moduleOp, {"GPU", "name"});
   if (failed(targetDeviceNameAttr))
     llvm::errs()
@@ -601,7 +602,6 @@ LogicalResult DpasOp::verify() {
       auto it = targetDeviceArch->instructions.find("dpas");
       if (it != targetDeviceArch->instructions.end()) {
         std::shared_ptr<uArch::Instruction> instr = it->second;
-        std::cout << "Found instruction: " << instr->name << std::endl;
         auto matrixOp =
             std::dynamic_pointer_cast<mlir::xegpu::uArch::MatrixOpInterface>(
                 instr);
