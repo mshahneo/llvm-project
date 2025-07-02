@@ -1,4 +1,4 @@
-#include "mlir/Dialect/XeGPU/Utils/IntelGpuPVC.h"
+#include "mlir/Dialect/XeGPU/uArch/IntelGpuXe2.h"
 #include "llvm/Support/YAMLTraits.h"
 #include <iostream>
 #include <string>
@@ -68,15 +68,15 @@ bool DPASInstruction::checkSupportedMMATypes(mlir::Type AType, mlir::Type BType,
   return true;
 }
 
-std::vector<uint> DPASInstruction::getSupportedM(mlir::Type type) {
+std::vector<uint32_t> DPASInstruction::getSupportedM(mlir::Type type) {
   return {1, 2, 3, 4, 5, 6, 7, 8};
 }
 
-std::vector<uint> DPASInstruction::getSupportedK(mlir::Type type) {
+std::vector<uint32_t> DPASInstruction::getSupportedK(mlir::Type type) {
   // assert if data type is not int or float type
   assert(type.isIntOrFloat() && "Matrix type must be int or float");
   auto bitWidth = type.getIntOrFloatBitWidth();
-  uint kSize = -1;
+  uint32_t kSize = 0;
   switch (bitWidth) {
   case 2:
     kSize = 64;
@@ -96,9 +96,10 @@ std::vector<uint> DPASInstruction::getSupportedK(mlir::Type type) {
   default:
     llvm_unreachable("Invalid int or float");
   }
+  return {kSize};
 }
 
-std::vector<uint> DPASInstruction::getSupportedN(mlir::Type type) {
+std::vector<uint32_t> DPASInstruction::getSupportedN(mlir::Type type) {
   return {16};
 }
 
@@ -134,9 +135,8 @@ DPASInstruction::getSupportedMatrix(mlir::Type type, MatrixType matrixType) {
   case MatrixType::MatrixD:
     resultMatrix = combineVectors(M, N);
     break;
-  default:
-    break;
   }
+  return resultMatrix;
 }
 
 } // namespace Xe2Plus
@@ -171,10 +171,10 @@ DPASInstruction::getSupportedMatrix(mlir::Type type, MatrixType matrixType) {
 //     namespace xegpu {
 //     namespace PVCuArchYAML { {
 //         struct XeCoreInfo {
-//             uint num_threads;
+//             uint32_t num_threads;
 //             SharedMemory shared_memory;
-//             uint num_vector_units;
-//             uint num_matrix_units;
+//             uint32_t num_vector_units;
+//             uint32_t num_matrix_units;
 //         };
 
 //         struct Xe2Plus {
