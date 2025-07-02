@@ -41,13 +41,14 @@ struct XeCoreInfo {
 
 struct Xe2Plus : public uArch {
   XeCoreInfo xe_core;
-  Xe2Plus(const std::string &archName, const std::string &archDescription,
-          const XeCoreInfo &xeCore,
-          const std::vector<uArchHierarchyComponent> &hierarchy = {},
-          const std::map<std::string, RegisterFileInfo> &regInfo = {},
-          const std::vector<CacheInfo> &cacheInfo = {},
-          const std::map<std::string, Instruction *> &instrs = {},
-          const std::vector<Restriction<> *> &restrs = {})
+  Xe2Plus(
+      const std::string &archName, const std::string &archDescription,
+      const XeCoreInfo &xeCore,
+      const std::vector<uArchHierarchyComponent> &hierarchy = {},
+      const std::map<std::string, RegisterFileInfo> &regInfo = {},
+      const std::vector<CacheInfo> &cacheInfo = {},
+      const std::map<std::string, std::shared_ptr<Instruction>> &instrs = {},
+      const std::vector<Restriction<> *> &restrs = {})
       : uArch(archName, archDescription, hierarchy, regInfo, cacheInfo, instrs,
               restrs),
         xe_core(xeCore) {}
@@ -131,7 +132,7 @@ struct LoadStorePrefetch2DInstruction : public Instruction {
 namespace PVCuArch {
 struct PVCuArch : public Xe2Plus {
   // Maintaines ownership of the instructions owned by PVUarch
-  std::vector<std::unique_ptr<Instruction>> owned_instructions;
+  std::vector<std::shared_ptr<Instruction>> owned_instructions;
   PVCuArch()
       : Xe2Plus("pvc",                        // archName
                 "Ponte Vecchio Architecture", // archDescription
@@ -166,9 +167,10 @@ struct PVCuArch : public Xe2Plus {
         CacheInfo(512 * 1024, 64, this->uArch_hierarchy[3]));
 
     // Add the instructions
-    auto dpas = std::make_unique<DPASInstruction>();
-    instructions[dpas->name] = dpas.get();
-    owned_instructions.push_back(std::move(dpas));
+    auto dpas = std::make_shared<DPASInstruction>();
+    instructions.emplace(dpas->name, dpas);
+    // instructions[dpas->name] = dpas.get();
+    owned_instructions.push_back(dpas);
   }
 };
 } // namespace PVCuArch
@@ -176,7 +178,7 @@ struct PVCuArch : public Xe2Plus {
 namespace BMGuArch {
 struct BMGuArch : public Xe2Plus {
   // Maintaines ownership of the instructions owned by PVUarch
-  std::vector<std::unique_ptr<Instruction>> owned_instructions;
+  std::vector<std::shared_ptr<Instruction>> owned_instructions;
   BMGuArch()
       : Xe2Plus("bmg",                     // archName
                 "Battlemage Architecture", // archDescription
@@ -210,9 +212,10 @@ struct BMGuArch : public Xe2Plus {
         CacheInfo(18 * 1024 * 1024, 256, this->uArch_hierarchy[3]));
 
     // Add the instructions
-    auto dpas = std::make_unique<DPASInstruction>();
-    instructions[dpas->name] = dpas.get();
-    owned_instructions.push_back(std::move(dpas));
+    auto dpas = std::make_shared<DPASInstruction>();
+    instructions.emplace(dpas->name, dpas);
+    // instructions[dpas->name] = dpas.get();
+    owned_instructions.push_back(dpas);
   }
 };
 } // namespace BMGuArch

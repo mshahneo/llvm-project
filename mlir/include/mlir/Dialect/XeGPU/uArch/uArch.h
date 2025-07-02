@@ -203,6 +203,8 @@ struct Instruction {
       : name(std::move(name)), description(std::move(desc)),
         opcode(std::move(opcode)), functional_unit(fu), type(itype), scope(sc),
         unit_of_computation(uoc) {}
+
+  virtual ~Instruction() = default;
 };
 
 // A struct to represent register file information
@@ -276,7 +278,7 @@ struct uArch {
   // Each level of cache is indexed lower to higher in the vector
   // (e.g., L1 indexed at 0, L2 at 1 and so on) L1, L2, L3, etc.
   std::vector<CacheInfo> cache_info;
-  std::map<std::string, Instruction *> instructions;
+  std::map<std::string, std::shared_ptr<Instruction>> instructions;
   std::vector<Restriction<> *> restrictions;
 
   // Constructor
@@ -285,7 +287,8 @@ struct uArch {
         const std::vector<uArchHierarchyComponent> &uArch_hierarchy = {},
         const std::map<std::string, RegisterFileInfo> &register_file_info = {},
         const std::vector<CacheInfo> &cache_info = {},
-        const std::map<std::string, Instruction *> &instructions = {},
+        const std::map<std::string, std::shared_ptr<Instruction>>
+            &instructions = {},
         const std::vector<Restriction<> *> &restrictions = {})
       : name(name), description(description), uArch_hierarchy(uArch_hierarchy),
         register_file_info(register_file_info), cache_info(cache_info),
@@ -380,19 +383,19 @@ public:
   }
 
   // Insert or update a key-value pair
-  void insert(const std::string &key, uArch value) {
+  void insert(const std::string &key, std::shared_ptr<uArch> value) {
     std::unique_lock<std::shared_mutex> lock(mutex_);
-    // map_[key] = value;
-    map_.emplace(key, value);
+    // map_[key] = std::move(value); // safe to overwrite
+    map_.emplace(key, std::move(value)); // safe to overwrite
   }
 
   // Get a value by key (concurrent safe read)
-  std::optional<uArch> get(const std::string &key) const {
+  std::shared_ptr<uArch> get(const std::string &key) const {
     std::shared_lock<std::shared_mutex> lock(mutex_);
     auto it = map_.find(key);
     if (it != map_.end())
       return it->second;
-    return std::nullopt;
+    return nullptr;
   }
 
   // Check if a key exists
@@ -413,8 +416,53 @@ private:
   uArchMap &operator=(const uArchMap &) = delete;
 
   mutable std::shared_mutex mutex_;
-  std::map<std::string, uArch> map_;
+  std::map<std::string, std::shared_ptr<uArch>> map_;
 };
+
+// struct uArchMap {
+// public:
+//   // Singleton instance
+//   static uArchMap &instance() {
+//     static uArchMap instance;
+//     return instance;
+//   }
+
+//   // Insert or update a key-value pair
+//   void insert(const std::string &key, uArch value) {
+//     std::unique_lock<std::shared_mutex> lock(mutex_);
+//     // map_[key] = value;
+//     map_.emplace(key, value);
+//   }
+
+//   // Get a value by key (concurrent safe read)
+//   std::optional<uArch> get(const std::string &key) const {
+//     std::shared_lock<std::shared_mutex> lock(mutex_);
+//     auto it = map_.find(key);
+//     if (it != map_.end())
+//       return it->second;
+//     return std::nullopt;
+//   }
+
+//   // Check if a key exists
+//   bool contains(const std::string &key) const {
+//     std::shared_lock<std::shared_mutex> lock(mutex_);
+//     return map_.find(key) != map_.end();
+//   }
+
+//   // Remove a key
+//   bool erase(const std::string &key) {
+//     std::unique_lock<std::shared_mutex> lock(mutex_);
+//     return map_.erase(key) > 0;
+//   }
+
+// private:
+//   uArchMap() = default;
+//   uArchMap(const uArchMap &) = delete;
+//   uArchMap &operator=(const uArchMap &) = delete;
+
+//   mutable std::shared_mutex mutex_;
+//   std::map<std::string, std::shared_ptr<uArch>> map_;
+// };
 
 // std::unordered_map<std::string, uArch> uArchMap;
 // std::shared_mutex uArchMapMutex;
