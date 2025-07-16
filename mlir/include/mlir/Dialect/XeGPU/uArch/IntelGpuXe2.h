@@ -88,10 +88,6 @@ struct DPASInstruction : public Instruction, public MatrixOpInterface {
   getSupportedMatrix(mlir::Type type, MatrixType matrixType) override;
 };
 
-struct LoadStore2DTileInfo : public RangeTile {
-  std::vector<uint32_t> array_len;
-};
-
 // struct to represent Load2D/Store2D/Prefetch instruction
 struct LoadStorePrefetch2DInstruction : public Instruction {
   MemoryType memory_type;
@@ -99,30 +95,33 @@ struct LoadStorePrefetch2DInstruction : public Instruction {
   //   std::vector<std::string> supported_types;
   std::vector<uint32_t> supported_types_bitwidth;
   std::map<std::string, uint32_t> alignment;
-  LoadStore2DTileInfo supported_tile_sizes;
+  std::vector<std::vector<uint32_t>> supported_tile_sizes;
   uint32_t min_surface_pitch;
 
   // Validate Array length restriction on a given tile
-  bool validateArrayLenRestriction(Tile tile, uint32_t array_len,
-                                   mlir::Type dataType) {
+  bool validateArrayLenRestriction(std::vector<uint32_t> tile,
+                                   uint32_t array_len, mlir::Type dataType) {
 
-    Restriction<Tile, uint32_t, mlir::Type> width_array_len_restriction(
-        tile, array_len, dataType,
-        [](Tile tile, uint32_t array_len, mlir::Type dataType) {
-          assert(tile.no_of_dims == 2);
-          return tile.dims[1] * array_len *
-                     (dataType.getIntOrFloatBitWidth() / 8) <=
-                 64;
-        });
+    Restriction<std::vector<uint32_t>, uint32_t, mlir::Type>
+        width_array_len_restriction(
+            tile, array_len, dataType,
+            [](std::vector<uint32_t> tile, uint32_t array_len,
+               mlir::Type dataType) {
+              assert(tile.size() == 2);
+              return tile[1] * array_len *
+                         (dataType.getIntOrFloatBitWidth() / 8) <=
+                     64;
+            });
     return width_array_len_restriction.validate();
   }
 
   // Validate Surface Pitch restriction on a given tile
-  bool validateSurfacePitchRestriction(Tile tile,
+  bool validateSurfacePitchRestriction(std::vector<uint32_t> tile,
                                        uint32_t surfacePitch /*in bytes*/) {
-    Restriction<Tile, uint32_t> surface_pitch_restriction(
-        tile, surfacePitch, [](Tile tile, uint32_t surfacePitch) {
-          assert(tile.no_of_dims == 2);
+    Restriction<std::vector<uint32_t>, uint32_t> surface_pitch_restriction(
+        tile, surfacePitch,
+        [](std::vector<uint32_t> tile, uint32_t surfacePitch) {
+          assert(tile.size() == 2);
           return surfacePitch >= 64;
         });
     return surface_pitch_restriction.validate();

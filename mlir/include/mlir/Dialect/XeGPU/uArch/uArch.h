@@ -34,48 +34,6 @@ struct Range {
   int end;
 };
 
-// Tile can be multi-dimensional
-// For example, a 2D tile can be represented as:
-// Tile:
-//   no_of_dims: 2
-//   dim: [2, 2]
-// This represents a 2x2 tile
-struct Tile {
-  uint32_t no_of_dims;
-  std::vector<uint32_t> dims;
-};
-
-// RangeTile represents a range of tiles instead of a single tile
-// RangeTile essentially provides a way represent the supported range of values
-// in each dimension For each dimension, the range of values is represented as a
-// Range For example, a 2D RangeTile can be represented as: RangeTile:
-//   no_of_dims: 2
-//   dims:
-//     - [1, 32]
-//     - [2, 16]
-// This represents a 2x2 RangeTile where the first dimension can have values
-// from 1 to 32 and the second dimension can have values from 2 to 16
-struct RangeTile {
-  uint32_t no_of_dims;
-  std::vector<Range> dims;
-};
-
-// DiscreteTile represents a set of tiles instead of a single tile
-// DiscreteTile essentially provides a way represent the supported set of values
-// in each dimension For each dimension, the set of values is represented as a
-// vector of integers For example, a 2D DiscreteTile can be represented as:
-// DiscreteTile:
-//   no_of_dims: 2
-//   dims:
-//     - [1, 2, 4, 8, 16, 32]
-//     - [2, 4, 8, 16]
-// This represents a 2x2 DiscreteTile where the first dimension can have values
-// 1, 2, 4, 8, 16, 32 and the second dimension can have values 2, 4, 8, 16
-struct DiscreteTile {
-  uint32_t no_of_dims;
-  std::vector<std::vector<uint32_t>> dims;
-};
-
 // Restriction struct
 // This struct is used to represent a restriction on the uArch
 // The restriction is represented as a range of necessary parameters (template
@@ -85,11 +43,13 @@ struct DiscreteTile {
 // false if the arguments do not satisfy the restriction
 
 // For example, a restriction that checks if the number of dimensions in a
-// RangeTile is 2 can be represented as: RangeTile rt = {2, {{1, 32}, {2, 16}}};
-// Restriction<RangeTile> r1(rt, [](RangeTile t) { return t.no_of_dims == 2; });
-// r1.validate() will return true if the number of dimensions in the RangeTile
-// is 2 r1.validate() will return false if the number of dimensions in the
-// RangeTile is not 2
+// std::vector<std::vector<uint32_t>> is 2 can be represented as:
+// std::vector<std::vector<uint32_t>> rt =
+// {{1, 32}, {2, 16}}; Restriction<std::vector<std::vector<uint32_t>>> r1(rt,
+// [](std::vector<std::vector<uint32_t>> t) { return t.size() == 2; });
+// r1.validate() will return true if the number of dimensions in the
+// std::vector<std::vector<uint32_t>> is 2 r1.validate() will return false if
+// the number of dimensions in the std::vector<std::vector<uint32_t>> is not 2
 
 // The primary purpose of Restriction struct is to provide a generic way to
 // represent restrictions on the uArch and to validate if the uArch satisfies
@@ -252,8 +212,9 @@ struct CacheInfo {
 // - the set of tiles supported by the uArch,
 // - the set of instructions supported by the uArch,
 // - the set of restrictions on the uArch
-// The information is represented as strings, RangeTile, DiscreteTile,
-// Instruction and Restriction structs For example, the information about a
+// The information is represented as strings, std:vector,
+// Instruction and Restriction structs.
+// For example, the information about a
 // uArch can be represented as: uArch uarch = {"XeHPG", "Intel Xe HPG
 // microarchitecture", {2, {{1, 32}, {1, 32}}}, {2, {{1, 2, 4, 8, 16, 32}, {1,
 // 2, 4, 8, 16, 32}}}, {{"dpas", "0x83", "matrix", "simd", "subgroup", "tile",
@@ -348,7 +309,8 @@ struct TileOpInterface {
   // Get the supported tiles for the specific data type.
   // Can provide load/store/prefetch ops supported tile sizes for a specific
   // uarch
-  virtual DiscreteTile getSupportedTiles(mlir::Type type) = 0;
+  virtual std::vector<std::vector<uint32_t>>
+  getSupportedTiles(mlir::Type type) = 0;
 
   // Validate the tile ops restrictions
   // @param tile, tile to load/store/prefetch
@@ -356,7 +318,8 @@ struct TileOpInterface {
   // @param dataType, data type of the data
   // @param surface_pitch, suface pitch
   // @param array_len, array length
-  virtual bool validate(Tile tile, Tile surface, mlir::Type dataType,
+  virtual bool validate(std::vector<uint32_t> tile,
+                        std::vector<uint32_t> surface, mlir::Type dataType,
                         uint32_t surface_pitch, uint32_t array_len = 1) = 0;
   virtual ~TileOpInterface() = default;
 };
