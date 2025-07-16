@@ -8,4 +8,5 @@ add_mlir_dialect_library(MLIRXeGPUUtils
   MLIRIR
   MLIRSCFTransforms
   MLIRXeGPUDialect
-  )
+)
+
