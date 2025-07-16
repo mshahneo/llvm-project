@@ -1,5 +1,4 @@
 add_mlir_dialect_library(MLIRXeGPUTransforms
-  XeGPUAttachTargetDevice.cpp
   XeGPUBlocking.cpp
   XeGPUFoldAliasOps.cpp
   XeGPUSubgroupDistribute.cpp

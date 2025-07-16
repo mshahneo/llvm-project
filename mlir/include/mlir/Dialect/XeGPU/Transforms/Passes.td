@@ -71,21 +71,5 @@ def XeGPUBlocking: Pass<"xegpu-blocking"> {
   ];
 }
 
-def XeGPUAttachTargetDevice : Pass<"xegpu-attach-target-device", "ModuleOp"> {
-  let summary = "Attach a dlti.target_system_spec entry with a named device";
-  let description = [{
-    This pass attaches a `dlti.target_system_spec` attribute to the module
-    with a device entry like `#dlti.dl_entry<"name", "<device>">`.
-  }];
-
-  let options = [
-    Option<"deviceName", "device-name", "std::string",
-           /*default=*/"\"pvc\"",
-           "Name of the target device to attach (e.g. pvc)">,
-  ];
-  let dependentDialects = [
-      "xegpu::XeGPUDialect", "mlir::DLTIDialect"
-  ];
-}
 
 #endif // MLIR_DIALECT_XEGPU_TRANSFORMS_PASSES_TD
