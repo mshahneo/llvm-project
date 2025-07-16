@@ -646,8 +646,8 @@ func.func @tensor_desc_invalid_sg_data(%src: ui64, %offsets: vector<16xindex>) {
 
 
 // -----
-module @invalid_dpas attributes {dlti.target_system_spec = #dlti.target_system_spec<"GPU" = #dlti.target_device_spec<"name" = "pvc">>, gpu.container_module} {
-    gpu.module @invalid_dpas attributes {spirv.target_env = #spirv.target_env<#spirv.vce<v1.0, [Addresses, Float16Buffer, Int64, Int16, Int8, Kernel, Linkage, Vector16, GenericPointer, Groups, Float16, Float64, AtomicFloat32AddEXT, ExpectAssumeKHR, SubgroupDispatch, VectorComputeINTEL, VectorAnyINTEL, Bfloat16ConversionINTEL], [SPV_EXT_shader_atomic_float_add, SPV_KHR_expect_assume, SPV_INTEL_vector_compute, SPV_INTEL_bfloat16_conversion]>, api=OpenCL, #spirv.resource_limits<>>} {
+module @invalid_dpas attributes {gpu.container_module} {
+    gpu.module @invalid_dpas [#xevm.target<O = 3, chip = "pvc">] {
 
     gpu.func @invalid_dpas(%a: memref<24x32xf32>, %b: memref<32x24xf32>) {
         %tdesc_a = xegpu.create_nd_tdesc %a[0, 0] : memref<24x32xf32> -> !xegpu.tensor_desc<24x32xf32, #xegpu.layout<sg_layout = [2, 4], sg_data = [12, 8], lane_layout = [2, 8], lane_data = [1, 1]>>

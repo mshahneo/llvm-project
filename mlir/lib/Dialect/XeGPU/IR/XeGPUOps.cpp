@@ -8,6 +8,8 @@
 
 #include "mlir/Dialect/Arith/Utils/Utils.h"
 #include "mlir/Dialect/DLTI/DLTI.h"
+#include "mlir/Dialect/GPU/IR/GPUDialect.h"
+#include "mlir/Dialect/LLVMIR/XeVMDialect.h"
 #include "mlir/Dialect/Utils/IndexingUtils.h"
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/Dialect/XeGPU/IR/XeGPU.h"
@@ -579,20 +581,28 @@ LogicalResult DpasOp::verify() {
 
   // @uArch: Check if the types are supported for DPAS.
   Operation *op = getOperation();
-  auto moduleOp = op->getParentOfType<ModuleOp>();
-  if (!moduleOp)
-    llvm::errs() << "No parent module op.\n";
+
+  // Use XeVM target
+  auto gpuModuleOp = op->getParentOfType<gpu::GPUModuleOp>();
+  xevm::XeVMTargetAttr xevmAttr = nullptr;
+  if (gpuModuleOp) {
+    auto targetAttrs = gpuModuleOp.getTargets();
+    if (targetAttrs) {
+      // Look up XeVM attribute
+      for (auto &attr : *targetAttrs) {
+        xevmAttr = dyn_cast<mlir::xevm::XeVMTargetAttr>(attr);
+        if (!xevmAttr) {
+          LLVM_DEBUG(llvm::dbgs() << "No target device found, skipping "
+                                     "target-specific verification\n");
+        }
+      }
+    }
+  }
 
   // It target device info is not attched, skip the target-specific checks
-  auto targetDeviceNameAttr = dlti::query(moduleOp, {"GPU", "name"});
-  if (failed(targetDeviceNameAttr))
-    llvm::errs()
-        << "No target device found, skipping target-specific verification\n";
-
   // Potential usage of uArch in verification.
-  if (succeeded(targetDeviceNameAttr)) {
-    auto targetDeviceNameStr =
-        llvm::dyn_cast<StringAttr>(targetDeviceNameAttr.value()).str();
+  if (xevmAttr) {
+    auto targetDeviceNameStr = xevmAttr.getChip().str();
     auto targetDeviceArch =
         mlir::xegpu::uArch::uArchMap::instance().get(targetDeviceNameStr);
     if (targetDeviceArch) {
