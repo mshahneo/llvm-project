@@ -1,4 +1,4 @@
-//===--- uArch.h ---------------------------------------*- C++ -*-===//
+//===--- IntelGpuXe2.h ---------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -7,14 +7,14 @@
 //===----------------------------------------------------------------------===//
 //
 /// \file
-/// PVC uArch definition.
+/// Xe2 uArch definition.
 ///
 //
 //===----------------------------------------------------------------------===//
 #ifndef MLIR_DIALECT_XEGPU_UTILS_INTEL_GPU_XE2_H
 #define MLIR_DIALECT_XEGPU_UTILS_INTEL_GPU_XE2_H
 
-#include "mlir/Dialect/XeGPU/uArch/uArch.h"
+#include "mlir/Dialect/XeGPU/uArch/uArchInterfaces.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/TypeUtilities.h"
 #include <map>
@@ -47,51 +47,47 @@ struct Xe2Plus : public uArch {
       const std::vector<uArchHierarchyComponent> &hierarchy = {},
       const std::map<std::string, RegisterFileInfo> &regInfo = {},
       const std::vector<CacheInfo> &cacheInfo = {},
-      const std::map<std::string, std::shared_ptr<Instruction>> &instrs = {},
-      const std::vector<Restriction<> *> &restrs = {})
-      : uArch(archName, archDescription, hierarchy, regInfo, cacheInfo, instrs,
-              restrs),
+      const std::map<std::string, std::shared_ptr<Instruction>> &instrs = {})
+      : uArch(archName, archDescription, hierarchy, regInfo, cacheInfo, instrs),
         xe_core(xeCore) {}
 };
 
 // struct to represent DPAS instruction
-struct DPASInstruction : public Instruction, public MatrixOpInterface {
-  // Range systolic_depth;
-  // Range repreat_count;
-  // Range execution_size;
-  // std::map<std::string, uint32_t> ops_per_channel;
-  // std::vector<std::vector<std::string>> supported_types;
-  // std::map<std::string, std::map<std::string, std::vector<std::string>>>
-  //     matrix_size;
-
-  // bool checkSupportedDPASTypes(mlir::Type dstType, mlir::Type src0Type,
-  //                              mlir::Type src1Type, mlir::Type src2Type);
-
+struct DPASInstruction : public Instruction, public MMAOpInterface {
   DPASInstruction()
-      : Instruction("dpas",                     // name
-                    "Dot Product Accumulate",   // description
-                    "0xABCD",                   // opcode
-                    FunctionalUnit::Matrix,     // functional_unit
-                    InstructionType::SIMD,      // type
-                    InstructionScope::Subgroup, // scope
-                    UnitOfComputation::Matrix)  // unit_of_computation
+      : Instruction("dpas",                   // name
+                    "Dot Product Accumulate") // description
   {}
 
   // Override all virtuals from MatrixOpInterface
-  virtual bool checkSupportedMMATypes(mlir::Type AType, mlir::Type BType,
-                                      mlir::Type CType,
-                                      mlir::Type DType) override;
+  virtual std::vector<std::pair<uint32_t, uint32_t>>
+  getSupportedShapes(mlir::Type dataType, MMAOpndEnum matrixType) override;
+  virtual std::vector<mlir::Type>
+  getSupportedTypes(MLIRContext &context, MMAOpndEnum matrixType) override;
+  virtual bool
+  checkSupportedShapesAndTypes(std::pair<uint32_t, uint32_t> AShape,
+                               std::pair<uint32_t, uint32_t> BShape,
+                               std::pair<uint32_t, uint32_t> CShape,
+                               std::pair<uint32_t, uint32_t> DShape,
+                               mlir::Type AType, mlir::Type BType,
+                               mlir::Type CType, mlir::Type DType) override;
+  virtual bool checkSupportedTypes(mlir::Type AType, mlir::Type BType,
+                                   mlir::Type CType, mlir::Type DType) override;
+  virtual bool validate(std::pair<uint32_t, uint32_t> AShape,
+                        std::pair<uint32_t, uint32_t> BShape,
+                        std::pair<uint32_t, uint32_t> CShape,
+                        std::pair<uint32_t, uint32_t> DShape, mlir::Type AType,
+                        mlir::Type BType, mlir::Type CType,
+                        mlir::Type DType) override;
   virtual std::vector<uint32_t> getSupportedM(mlir::Type type) override;
   virtual std::vector<uint32_t> getSupportedK(mlir::Type type) override;
   virtual std::vector<uint32_t> getSupportedN(mlir::Type type) override;
-  virtual std::vector<std::pair<unsigned, unsigned>>
-  getSupportedMatrix(mlir::Type type, MatrixType matrixType) override;
 };
 
 // struct to represent Load2D/Store2D/Prefetch instruction
 struct LoadStorePrefetch2DInstruction : public Instruction {
   MemoryType memory_type;
-  MemoryAccessType memory_access_type;
+  // MemoryAccessType memory_access_type;
   //   std::vector<std::string> supported_types;
   std::vector<uint32_t> supported_types_bitwidth;
   std::map<std::string, uint32_t> alignment;

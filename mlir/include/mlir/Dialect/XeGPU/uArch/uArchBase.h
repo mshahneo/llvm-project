@@ -11,8 +11,8 @@
 ///
 //
 //===----------------------------------------------------------------------===//
-#ifndef MLIR_DIALECT_XEGPU_UTILS_UARCH_H
-#define MLIR_DIALECT_XEGPU_UTILS_UARCH_H
+#ifndef MLIR_DIALECT_XEGPU_UTILS_UARCH_BASE_H
+#define MLIR_DIALECT_XEGPU_UTILS_UARCH_BASE_H
 
 #include <any>
 #include <functional>
@@ -27,13 +27,6 @@
 namespace mlir {
 namespace xegpu {
 namespace uArch {
-
-// Data types we need for YAML to uArch translation
-struct Range {
-  int start;
-  int end;
-};
-
 // Restriction struct
 // This struct is used to represent a restriction on the uArch
 // The restriction is represented as a range of necessary parameters (template
@@ -77,65 +70,23 @@ struct uArchHierarchyComponent {
       : name(name), no_of_component(no_of_component) {}
 };
 
-// An enum class to represent the functional unit of an instruction
-enum class FunctionalUnit {
-  ALU,
-  Tensor,
-  Matrix,
-  Load,
-  Store,
-  Branch,
-  Barrier,
-  Memory,
-  Atomic,
-  Interconnect,
-  Other
-};
-
 // An enum class to represent the type of memory
 enum class MemoryType { Shared, Local, Global, Constant, Texture, Other };
 
-// An enum class to represent the memory access type
-enum class MemoryAccessType { Read, Write, ReadWrite, Other };
-
-// An enum class to represent the type of an instruction
-enum class InstructionType { SIMT, SIMD, SPMD, MIMD, Other };
-
 // An enum class to represent the scope of an instruction
-enum class InstructionScope {
-  WorkItem,
-  Subgroup,
-  Workgroup,
-  Cluster,
-  Thread, // For CPU
-  Core,   // For CPU
-  Other
-};
-
-// An enum class to represent the unit of computation of an instruction
-enum class UnitOfComputation {
-  Scalar,
-  Vector, // 1-D vector
-  Matrix,
-  Tile,
-  Other
-};
+enum class InstructionScopeEnum { WorkItem, Subgroup, Workgroup, Cluster };
 
 // A struct to represent basic information about an instruction
 // This struct is used to represent the information about an instruction in the
 // uArch The information includes:
 // - the name of the instruction,
-// - the opcode,
-// - the functional unit,
-// - the type of the instruction,
-// - the scope of the instruction,
-// - the unit of computation,
 // - the description of the instruction
+// - the scope of the instruction,
+//
 // The information is represented as strings
 // For example, the information about an instruction can be represented as:
-// Instruction info = {"dpas", "0x83", "matrix", "simd", "subgroup", "tile",
-// "Dot Product Accumulate Systolic  (DPAS) is a matrix multiply-add
-// operation"};
+// Instruction instr = {"dpas", "Dot Product Accumulate Systolic  (DPAS) is a
+// matrix multiply-add operation", "subgroup"};
 
 // The primary purpose of Instruction struct is to provide a generic way to
 // represent information about an instruction and to use this information to
@@ -145,24 +96,10 @@ enum class UnitOfComputation {
 struct Instruction {
   std::string name;
   std::string description;
-  std::string opcode;
-  FunctionalUnit functional_unit;
-  InstructionType type;
-  InstructionScope scope;
-  UnitOfComputation unit_of_computation;
-
+  InstructionScopeEnum scope;
   // @TODO: Add more fields as needed
-  // std::string latency;
-  // std::string throughput;
-  // std::string pipeline;
-  // std::string resource;
-  // std::string comment;
-  Instruction(std::string name, std::string desc, std::string opcode,
-              FunctionalUnit fu, InstructionType itype, InstructionScope sc,
-              UnitOfComputation uoc)
-      : name(std::move(name)), description(std::move(desc)),
-        opcode(std::move(opcode)), functional_unit(fu), type(itype), scope(sc),
-        unit_of_computation(uoc) {}
+  Instruction(std::string name, std::string desc)
+      : name(std::move(name)), description(std::move(desc)) {}
 
   virtual ~Instruction() = default;
 };
@@ -191,12 +128,8 @@ struct CacheInfo {
   uint32_t line_size;
   // At which component level the cache is shared
   uArchHierarchyComponent component;
-  // uint32_t associativity;
-  // uint32_t num_banks;
-  // uint32_t bank_size;
-  // uint32_t num_ports;
-  // uint32_t port_width;
-  // uint32_t bank_conflicts;
+  // @TODO: Add more fields as needed (e.g., associativity, num_banks,
+  // bank_size, num_ports, port_width, bank_conflicts)
   // Constructor
   CacheInfo(uint32_t size, uint32_t line_size,
             const uArchHierarchyComponent &component)
@@ -213,16 +146,8 @@ struct CacheInfo {
 // - the set of instructions supported by the uArch,
 // - the set of restrictions on the uArch
 // The information is represented as strings, std:vector,
-// Instruction and Restriction structs.
-// For example, the information about a
-// uArch can be represented as: uArch uarch = {"XeHPG", "Intel Xe HPG
-// microarchitecture", {2, {{1, 32}, {1, 32}}}, {2, {{1, 2, 4, 8, 16, 32}, {1,
-// 2, 4, 8, 16, 32}}}, {{"dpas", "0x83", "matrix", "simd", "subgroup", "tile",
-// "Dot Product Accumulate Systolic  (DPAS) is a matrix multiply-add
-// operation"}}, {r1, r2, r3}}; This represents a uArch named "XeHPG" with
-// description "Intel Xe HPG microarchitecture" that supports 2x2 tiles with
-// dimensions ranging from 1 to 32, 1 to 32, supports a DPAS instruction and has
-// 3 restrictions r1, r2, r3 on the uArch
+// Instruction structs.
+
 struct uArch {
   std::string name; // similar to target triple
   std::string description;
@@ -240,7 +165,6 @@ struct uArch {
   // (e.g., L1 indexed at 0, L2 at 1 and so on) L1, L2, L3, etc.
   std::vector<CacheInfo> cache_info;
   std::map<std::string, std::shared_ptr<Instruction>> instructions;
-  std::vector<Restriction<> *> restrictions;
 
   // Constructor
   uArch() = default;
@@ -253,23 +177,33 @@ struct uArch {
         const std::vector<Restriction<> *> &restrictions = {})
       : name(name), description(description), uArch_hierarchy(uArch_hierarchy),
         register_file_info(register_file_info), cache_info(cache_info),
-        instructions(instructions), restrictions(restrictions) {}
+        instructions(instructions) {}
+
+  /// @brief Get the name of the supported instruction names for that
+  /// arhcitecture. It essentially returns the name of the instructions that was
+  /// added to the uArch.
+  /// @return A vector of instruction names
+  std::vector<std::string> getSupportedInstructionNames() {
+    std::vector<std::string> instructionNames;
+    for (auto &inst : instructions) {
+      instructionNames.push_back(inst.first);
+    }
+    return instructionNames;
+  }
+  /// @brief Checks if an instruction is supported in specific uArch
+  /// @param instructionName
+  /// @return true if supported, false otherwise
+  bool checkSupportedInstruction(std::string instructionName) {
+    auto it = instructions.find(instructionName);
+    return (it != instructions.end()) ? true : false;
+  }
 };
 
 // A struct to represent shared memory information
 struct SharedMemory {
   uint32_t size;      // in bytes
   uint32_t alignment; // in bytes
-  // @TODO: Add more fields as needed
-  // uint32_t latency;
-  // uint32_t throughput;
-  // uint32_t bandwidth;
-  // uint32_t num_ports;
-  // uint32_t port_width;
-  // uint32_t bank_size;
-  // uint32_t bank_conflicts;
-  // uint32_t num_banks;
-
+  // @TODO: Add more fields as needed (e.g., latency, throughput, bandwidth)
   // Constructor
   SharedMemory(uint32_t size, uint32_t alignment)
       : size(size), alignment(alignment) {}
@@ -303,39 +237,6 @@ struct SharedMemory {
 //     uint32_t num_matrix_units;
 //     SharedMemory shared_memory;
 // };
-
-// Create a TileLikeOp Interface
-struct TileOpInterface {
-  // Get the supported tiles for the specific data type.
-  // Can provide load/store/prefetch ops supported tile sizes for a specific
-  // uarch
-  virtual std::vector<std::vector<uint32_t>>
-  getSupportedTiles(mlir::Type type) = 0;
-
-  // Validate the tile ops restrictions
-  // @param tile, tile to load/store/prefetch
-  // @param surface, surface to load/store/prefetch data from
-  // @param dataType, data type of the data
-  // @param surface_pitch, suface pitch
-  // @param array_len, array length
-  virtual bool validate(std::vector<uint32_t> tile,
-                        std::vector<uint32_t> surface, mlir::Type dataType,
-                        uint32_t surface_pitch, uint32_t array_len = 1) = 0;
-  virtual ~TileOpInterface() = default;
-};
-
-enum class MatrixType { MatrixA, MatrixB, MatrixC, MatrixD };
-struct MatrixOpInterface {
-  virtual bool checkSupportedMMATypes(mlir::Type AType, mlir::Type BType,
-                                      mlir::Type CType, mlir::Type DType) = 0;
-  virtual std::vector<uint32_t> getSupportedM(mlir::Type type) = 0;
-  virtual std::vector<uint32_t> getSupportedK(mlir::Type type) = 0;
-  virtual std::vector<uint32_t> getSupportedN(mlir::Type type) = 0;
-  virtual std::vector<std::pair<unsigned, unsigned>>
-  getSupportedMatrix(mlir::Type type, MatrixType matrixType) = 0;
-
-  virtual ~MatrixOpInterface() = default;
-};
 
 struct uArchMap {
 public:

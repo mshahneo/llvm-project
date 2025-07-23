@@ -609,17 +609,25 @@ LogicalResult DpasOp::verify() {
       // @TODO: We should keep the name of the Instructions in one place, since
       // we use the name of the instruction to find the instruction, it should
       // be standardized and kept for users to access.
-      auto it = targetDeviceArch->instructions.find("dpas");
-      if (it != targetDeviceArch->instructions.end()) {
-        std::shared_ptr<uArch::Instruction> instr = it->second;
+
+      // One could use the find mechanism of std::map to find if an instruction
+      // is supported or not
+      //
+      // auto it = targetDeviceArch->instructions.find("dpas"); if (it !=
+      // targetDeviceArch->instructions.end())
+      //
+      // Alternatively, one could use uARch provided method to do so
+      if (targetDeviceArch->checkSupportedInstruction("dpas")) {
+        std::shared_ptr<uArch::Instruction> instr =
+            targetDeviceArch->instructions["dpas"];
         auto matrixOp =
-            std::dynamic_pointer_cast<mlir::xegpu::uArch::MatrixOpInterface>(
+            std::dynamic_pointer_cast<mlir::xegpu::uArch::MMAOpInterface>(
                 instr);
         if (matrixOp) {
-          if (!matrixOp->checkSupportedMMATypes(
-                  getLhsType().getElementType(), getRhsType().getElementType(),
-                  getResultType().getElementType(),
-                  getResultType().getElementType()))
+          if (!matrixOp->checkSupportedTypes(getLhsType().getElementType(),
+                                             getRhsType().getElementType(),
+                                             getResultType().getElementType(),
+                                             getResultType().getElementType()))
             return emitOpError("Unsupported DPAS types.");
         }
       }
