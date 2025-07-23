@@ -172,13 +172,10 @@ protected:
 // The uArch includes:
 // - the name of the uArch,
 // - the description of the uArch,
-// - the range of tiles supported by the uArch,
-// - the set of tiles supported by the uArch,
+// - uArch hierarchy
+// - Rgister File information
+// - Cache information
 // - the set of instructions supported by the uArch,
-// - the set of restrictions on the uArch
-// The information is represented as strings, std:vector,
-// Instruction structs.
-
 struct uArch {
   // Constructor
   uArch() = default;
