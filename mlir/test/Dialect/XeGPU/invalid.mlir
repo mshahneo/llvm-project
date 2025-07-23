@@ -643,3 +643,22 @@ func.func @tensor_desc_invalid_sg_data(%src: ui64, %offsets: vector<16xindex>) {
         #xegpu.layout<lane_layout = [8, 1], lane_data = [1, 2], order = [0, 1, 2]>>
   return
 }
+
+
+// -----
+module @invalid_dpas attributes {gpu.container_module} {
+    gpu.module @invalid_dpas [#xevm.target<O = 3, chip = "pvc">] {
+
+    gpu.func @invalid_dpas(%a: memref<24x32xf32>, %b: memref<32x24xf32>) {
+        %tdesc_a = xegpu.create_nd_tdesc %a[0, 0] : memref<24x32xf32> -> !xegpu.tensor_desc<24x32xf32, #xegpu.layout<sg_layout = [2, 4], sg_data = [12, 8], lane_layout = [2, 8], lane_data = [1, 1]>>
+        %load_a =  xegpu.load_nd %tdesc_a : !xegpu.tensor_desc<24x32xf32, #xegpu.layout<sg_layout = [2, 4], sg_data = [12, 8], lane_layout = [2, 8], lane_data = [1, 1]>>
+        -> vector<24x32xf32>
+        %tdesc_b = xegpu.create_nd_tdesc %b[0, 0] : memref<32x24xf32> -> !xegpu.tensor_desc<32x24xf32, #xegpu.layout<sg_layout = [4, 2], sg_data = [8, 12], lane_layout = [8, 2], lane_data = [1, 1]>>
+        %load_b =  xegpu.load_nd %tdesc_b : !xegpu.tensor_desc<32x24xf32, #xegpu.layout<sg_layout = [4, 2], sg_data = [8, 12], lane_layout = [8, 2], lane_data = [1, 1]>> -> vector<32x24xf32>
+        // expected-error@+1 {{Unsupported DPAS types.}}
+        %dpas = xegpu.dpas %load_a, %load_b {layout_result_0 =  #xegpu.layout<sg_layout = [2, 2], sg_data = [12, 12], lane_layout = [2, 2], lane_data = [1, 1]>} : vector<24x32xf32>, vector<32x24xf32> -> vector<24x24xf32>
+        gpu.return
+    }
+  }
+}
+

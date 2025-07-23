@@ -7,9 +7,13 @@
 //===----------------------------------------------------------------------===//
 
 #include "mlir/Dialect/Arith/Utils/Utils.h"
+#include "mlir/Dialect/DLTI/DLTI.h"
+#include "mlir/Dialect/GPU/IR/GPUDialect.h"
+#include "mlir/Dialect/LLVMIR/XeVMDialect.h"
 #include "mlir/Dialect/Utils/IndexingUtils.h"
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/Dialect/XeGPU/IR/XeGPU.h"
+#include "mlir/Dialect/XeGPU/uArch/IntelGpuXe2.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/TypeUtilities.h"
 
@@ -574,6 +578,62 @@ LogicalResult DpasOp::verify() {
 
   if (getAcc() && getAcc().getType() != getResultType())
     return emitOpError("Expecting the acc type to be the same as result.");
+
+  // @uArch: Check if the types are supported for DPAS.
+  Operation *op = getOperation();
+
+  // Use XeVM target
+  auto gpuModuleOp = op->getParentOfType<gpu::GPUModuleOp>();
+  xevm::XeVMTargetAttr xevmAttr = nullptr;
+  if (gpuModuleOp) {
+    auto targetAttrs = gpuModuleOp.getTargets();
+    if (targetAttrs) {
+      // Look up XeVM attribute
+      for (auto &attr : *targetAttrs) {
+        xevmAttr = dyn_cast<mlir::xevm::XeVMTargetAttr>(attr);
+        if (!xevmAttr) {
+          LLVM_DEBUG(llvm::dbgs() << "No target device found, skipping "
+                                     "target-specific verification\n");
+        }
+      }
+    }
+  }
+
+  // It target device info is not attched, skip the target-specific checks
+  // Potential usage of uArch in verification.
+  if (xevmAttr) {
+    auto targetDeviceNameStr = xevmAttr.getChip().str();
+    auto targetDeviceArch =
+        mlir::xegpu::uArch::uArchMap::instance().get(targetDeviceNameStr);
+    if (targetDeviceArch) {
+      // @TODO: We should keep the name of the Instructions in one place, since
+      // we use the name of the instruction to find the instruction, it should
+      // be standardized and kept for users to access.
+
+      // One could use the find mechanism of std::map to find if an instruction
+      // is supported or not
+      //
+      // auto it = targetDeviceArch->instructions.find("dpas"); if (it !=
+      // targetDeviceArch->instructions.end())
+      //
+      // Alternatively, one could use uARch provided method to do so
+      if (targetDeviceArch->checkSupportedInstruction("dpas")) {
+        auto supportedInstructions = targetDeviceArch->getInstructions();
+        std::shared_ptr<uArch::Instruction> instr =
+            supportedInstructions["dpas"];
+        auto matrixOp =
+            std::dynamic_pointer_cast<mlir::xegpu::uArch::MMAOpInterface>(
+                instr);
+        if (matrixOp) {
+          if (!matrixOp->checkSupportedTypes(getLhsType().getElementType(),
+                                             getRhsType().getElementType(),
+                                             getResultType().getElementType(),
+                                             getResultType().getElementType()))
+            return emitOpError("Unsupported DPAS types.");
+        }
+      }
+    }
+  }
 
   // SIMT code: the size of the B operand has to be a multiple of 32 bits.
   // It skips the semantic check since lack of architecture information.
