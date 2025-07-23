@@ -163,7 +163,7 @@ struct PVCuArch : public Xe2Plus {
 
     // Add the instructions
     auto dpas = std::make_shared<DPASInstruction>();
-    instructions.emplace(dpas->name, dpas);
+    instructions.emplace(dpas->getName(), dpas);
     // instructions[dpas->name] = dpas.get();
     owned_instructions.push_back(dpas);
   }
@@ -208,7 +208,7 @@ struct BMGuArch : public Xe2Plus {
 
     // Add the instructions
     auto dpas = std::make_shared<DPASInstruction>();
-    instructions.emplace(dpas->name, dpas);
+    instructions.emplace(dpas->getName(), dpas);
     // instructions[dpas->name] = dpas.get();
     owned_instructions.push_back(dpas);
   }

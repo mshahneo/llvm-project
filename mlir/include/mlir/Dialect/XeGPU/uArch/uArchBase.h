@@ -94,25 +94,24 @@ enum class InstructionScopeEnum { WorkItem, Subgroup, Workgroup, Cluster };
 // struct and add more fields as needed
 
 struct Instruction {
-  std::string name;
-  std::string description;
-  InstructionScopeEnum scope;
   // @TODO: Add more fields as needed
   Instruction(std::string name, std::string desc)
       : name(std::move(name)), description(std::move(desc)) {}
 
   virtual ~Instruction() = default;
+  // Get methods
+  std::string getName() { return name; }
+  std::string getDescription() { return description; }
+  InstructionScopeEnum getScope() { return scope; }
+
+protected:
+  std::string name;
+  std::string description;
+  InstructionScopeEnum scope;
 };
 
 // A struct to represent register file information
 struct RegisterFileInfo {
-  uint32_t size;                 // size per register in bits
-  std::vector<std::string> mode; // e.g., "small", "large" GRF modes
-  std::vector<uint32_t>
-      num_regs_per_thread_per_mode; // number of registers per thread per mode
-  uint32_t num_banks;
-  uint32_t bank_size;
-
   // Constructor
   RegisterFileInfo() = default;
   RegisterFileInfo(uint32_t size, const std::vector<std::string> &mode,
@@ -120,20 +119,52 @@ struct RegisterFileInfo {
                    uint32_t bank_size)
       : size(size), mode(mode), num_regs_per_thread_per_mode(numRegs),
         num_banks(num_banks), bank_size(bank_size) {}
+
+  // Get methods
+  uint32_t getSize() const { return size; }
+
+  const std::vector<std::string> &getModes() const { return mode; }
+
+  const std::vector<uint32_t> &getNumRegsPerThreadPerMode() const {
+    return num_regs_per_thread_per_mode;
+  }
+
+  uint32_t getNumBanks() const { return num_banks; }
+
+  uint32_t getBankSize() const { return bank_size; }
+
+protected:
+  uint32_t size;                 // size per register in bits
+  std::vector<std::string> mode; // e.g., "small", "large" GRF modes
+  std::vector<uint32_t>
+      num_regs_per_thread_per_mode; // number of registers per thread per mode
+  uint32_t num_banks;
+  uint32_t bank_size;
 };
 
 // A struct to represent cache information
+
 struct CacheInfo {
-  uint32_t size;
-  uint32_t line_size;
-  // At which component level the cache is shared
-  uArchHierarchyComponent component;
-  // @TODO: Add more fields as needed (e.g., associativity, num_banks,
-  // bank_size, num_ports, port_width, bank_conflicts)
   // Constructor
   CacheInfo(uint32_t size, uint32_t line_size,
             const uArchHierarchyComponent &component)
       : size(size), line_size(line_size), component(component) {}
+
+  virtual ~CacheInfo() = default;
+
+  // Get methods
+  uint32_t getSize() const { return size; }
+  uint32_t getLineSize() const { return line_size; }
+  const uArchHierarchyComponent &getComponent() const { return component; }
+
+protected:
+  uint32_t size;
+  uint32_t line_size;
+  // At which component level the cache is shared
+  uArchHierarchyComponent component;
+
+  // @TODO: Add more fields as needed (e.g., associativity, num_banks,
+  // bank_size, num_ports, port_width, bank_conflicts)
 };
 
 // A struct to represent the uArch
@@ -149,23 +180,6 @@ struct CacheInfo {
 // Instruction structs.
 
 struct uArch {
-  std::string name; // similar to target triple
-  std::string description;
-  // Represent the whole uArch hierarchy
-  // For 2 stack Intel PVC it would look something like this:
-  // uArchHierarchy[0] = {thread, 0}
-  // uArchHierarchy[1] = {XeCore, 8}
-  // uArchHierarchy[2] = {XeSlice, 16}
-  // uArchHierarchy[3] = {XeStack, 4}
-  // uArchHierarchy[4] = {gpu, 2}
-  std::vector<uArchHierarchyComponent> uArch_hierarchy;
-  // Different kind of regiger file information (e.g., GRF, ARF, etc.)
-  std::map<std::string, RegisterFileInfo> register_file_info;
-  // Each level of cache is indexed lower to higher in the vector
-  // (e.g., L1 indexed at 0, L2 at 1 and so on) L1, L2, L3, etc.
-  std::vector<CacheInfo> cache_info;
-  std::map<std::string, std::shared_ptr<Instruction>> instructions;
-
   // Constructor
   uArch() = default;
   uArch(const std::string &name, const std::string &description,
@@ -179,34 +193,66 @@ struct uArch {
         register_file_info(register_file_info), cache_info(cache_info),
         instructions(instructions) {}
 
+  // Get methods
+  const std::string &getName() const { return name; }
+
+  const std::string &getDescription() const { return description; }
+
+  const std::vector<uArchHierarchyComponent> &getHierarchy() const {
+    return uArch_hierarchy;
+  }
+
+  const std::map<std::string, RegisterFileInfo> &getRegisterFileInfo() const {
+    return register_file_info;
+  }
+
+  const std::vector<CacheInfo> &getCacheInfo() const { return cache_info; }
+
+  const std::map<std::string, std::shared_ptr<Instruction>> &
+  getInstructions() const {
+    return instructions;
+  }
+
   /// @brief Get the name of the supported instruction names for that
-  /// arhcitecture. It essentially returns the name of the instructions that was
-  /// added to the uArch.
-  /// @return A vector of instruction names
-  std::vector<std::string> getSupportedInstructionNames() {
+  /// architecture. It returns the names of the instructions added to the uArch.
+  std::vector<std::string> getSupportedInstructionNames() const {
     std::vector<std::string> instructionNames;
-    for (auto &inst : instructions) {
+    for (const auto &inst : instructions) {
       instructionNames.push_back(inst.first);
     }
     return instructionNames;
   }
-  /// @brief Checks if an instruction is supported in specific uArch
+
+  /// @brief Checks if an instruction is supported in this uArch
   /// @param instructionName
   /// @return true if supported, false otherwise
-  bool checkSupportedInstruction(std::string instructionName) {
-    auto it = instructions.find(instructionName);
-    return (it != instructions.end()) ? true : false;
+  bool checkSupportedInstruction(const std::string &instructionName) const {
+    return instructions.find(instructionName) != instructions.end();
   }
+
+protected:
+  std::string name; // Similar to target triple
+  std::string description;
+  std::vector<uArchHierarchyComponent> uArch_hierarchy;
+  std::map<std::string, RegisterFileInfo> register_file_info;
+  std::vector<CacheInfo> cache_info;
+  std::map<std::string, std::shared_ptr<Instruction>> instructions;
 };
 
 // A struct to represent shared memory information
 struct SharedMemory {
-  uint32_t size;      // in bytes
-  uint32_t alignment; // in bytes
-  // @TODO: Add more fields as needed (e.g., latency, throughput, bandwidth)
   // Constructor
   SharedMemory(uint32_t size, uint32_t alignment)
       : size(size), alignment(alignment) {}
+
+  // Getters
+  uint32_t getSize() const { return size; }
+  uint32_t getAlignment() const { return alignment; }
+
+protected:
+  uint32_t size;      // in bytes
+  uint32_t alignment; // in bytes
+  // @TODO: Add more fields as needed (e.g., latency, throughput, bandwidth)
 };
 
 // For future use case in Xe4+

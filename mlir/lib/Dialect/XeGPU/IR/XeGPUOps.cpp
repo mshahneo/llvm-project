@@ -618,8 +618,9 @@ LogicalResult DpasOp::verify() {
       //
       // Alternatively, one could use uARch provided method to do so
       if (targetDeviceArch->checkSupportedInstruction("dpas")) {
+        auto supportedInstructions = targetDeviceArch->getInstructions();
         std::shared_ptr<uArch::Instruction> instr =
-            targetDeviceArch->instructions["dpas"];
+            supportedInstructions["dpas"];
         auto matrixOp =
             std::dynamic_pointer_cast<mlir::xegpu::uArch::MMAOpInterface>(
                 instr);
