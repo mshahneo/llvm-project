@@ -85,6 +85,7 @@ void buildGPUPassPipeline(OpPassManager &pm,
     pm.addNestedPass<gpu::GPUModuleOp>(
         createConvertGpuOpsToLLVMSPVOps(gpuToLLVMSPVOptions));
   }
+  pm.addNestedPass<gpu::GPUModuleOp>(createConvertToLLVMPass());
   pm.addNestedPass<gpu::GPUModuleOp>(createCSEPass());
   pm.addNestedPass<gpu::GPUModuleOp>(createReconcileUnrealizedCastsPass());
 }
