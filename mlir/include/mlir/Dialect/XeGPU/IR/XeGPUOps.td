@@ -412,6 +412,7 @@ def XeGPU_LoadNdOp : XeGPU_Op<"load_nd", [
                        OptionalAttr<DenseI64ArrayAttr>: $const_offsets,
                        OptionalAttr<UnitAttr>: $packed,
                        OptionalAttr<DenseI64ArrayAttr>: $transpose,
+                       OptionalAttr<I32Attr>: $transpose_bit_width,
                        OptionalAttr<XeGPU_CacheHintAttr>: $l1_hint,
                        OptionalAttr<XeGPU_CacheHintAttr>: $l2_hint,
                        OptionalAttr<XeGPU_CacheHintAttr>: $l3_hint,
@@ -1853,6 +1854,11 @@ def XeGPU_DpasMxOp : XeGPU_Op<"dpas_mx", [Pure, AttrSizedOperandSegments,
     (`,` type($scale_b)^)? `->` type($result)
   }];
   let hasVerifier = 1;
+}
+
+def XeGPU_CompileHintOp : XeGPU_Op<"compile_hint", []> {
+  let summary = "prevents the compiler from scheduling.";
+  let assemblyFormat = [{ attr-dict }];
 }
 
 #endif // MLIR_DIALECT_XEGPU_IR_XEGPUOPS_TD

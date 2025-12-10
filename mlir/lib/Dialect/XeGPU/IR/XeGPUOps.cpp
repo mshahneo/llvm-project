@@ -58,6 +58,7 @@ static bool isWriteHintOrNone(const CachePolicyAttr &attr) {
     return true;
   auto kind = attr.getValue();
   return kind == CachePolicy::CACHED || kind == CachePolicy::UNCACHED ||
+         kind == CachePolicy::STREAMING ||
          kind == CachePolicy::WRITE_BACK || kind == CachePolicy::WRITE_THROUGH;
 }
 
@@ -517,7 +518,8 @@ void LoadNdOp::build(OpBuilder &builder, OperationState &state, Type retType,
                      xegpu::CachePolicyAttr l3_hint) {
 
   return build(builder, state, retType, tensorDesc, ValueRange(),
-               DenseI64ArrayAttr(), packed, transpose, l1_hint, l2_hint,
+               DenseI64ArrayAttr(), packed, transpose, nullptr, /*transpose_bit_width*/
+               l1_hint, l2_hint,
                l3_hint, /*anchor_layout=*/nullptr);
 }
 
@@ -535,7 +537,7 @@ void LoadNdOp::build(OpBuilder &builder, OperationState &state, Type retType,
   auto staticOffsetsAttr = builder.getDenseI64ArrayAttr(staticOffsets);
 
   build(builder, state, retType, tensorDesc, dynamicOffsets, staticOffsetsAttr,
-        packed, transpose, l1_hint, l2_hint, l3_hint,
+        packed, transpose, nullptr /*transpose_bit_width*/, l1_hint, l2_hint, l3_hint,
         /*anchor_layout=*/layout);
 }
 
@@ -598,7 +600,7 @@ LogicalResult LoadNdOp::verify() {
       mlir::emitWarning(getLoc()) << "Invalid transpose attr. It is ignored.";
   }
 
-  if (getPacked()) {
+  if (getPacked() || getTransposeBitWidth() == 32) {
     if (tdescTy.getRank() == 2) {
       const int axis = 0;
       auto vnni_factor = valueShape.back();
