@@ -1490,8 +1490,9 @@ def XeGPU_FenceOp: XeGPU_Op<"fence", []> {
         within each workgroup. "GPU" means the scope would be across workgroups within the GPU.
   }];
   let arguments = (ins XeGPU_MemorySpaceAttr: $memory_kind,
-                       XeGPU_FenceScopeAttr: $fence_scope);
-  let assemblyFormat = [{`memory_kind` `=` $memory_kind `,` `fence_scope` `=` $fence_scope attr-dict}];
+                       XeGPU_FenceScopeAttr: $fence_scope,
+                       OptionalAttr<XeGPU_FenceOpFlushAttr>: $fence_op_flush);
+  let assemblyFormat = [{`memory_kind` `=` $memory_kind `,` `fence_scope` `=` $fence_scope (`,` `fence_op_flush` `=` $fence_op_flush^)? attr-dict}];
   let extraClassDeclaration = extraBaseClassDeclaration;
 }
 
