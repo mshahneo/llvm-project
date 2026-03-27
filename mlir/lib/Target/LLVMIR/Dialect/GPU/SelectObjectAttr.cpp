@@ -26,6 +26,9 @@
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
 
+#include <atomic>
+#include <cstdio>
+
 using namespace mlir;
 
 namespace {
@@ -103,6 +106,25 @@ static LogicalResult embedBinaryImpl(StringRef moduleName,
   StringRef serializedStr = object.getObject().getValue();
   Constant *serializedCst =
       ConstantDataArray::getString(module.getContext(), serializedStr, addNull);
+
+  // Dump the serialized binary to a .spv file for debugging.
+  {
+    static std::atomic<int> dumpIndex{0};
+    std::string outFileName =
+        moduleName.str() + "_" + std::to_string(dumpIndex++) + ".spv";
+    StringRef rawData =
+        cast<ConstantDataArray>(serializedCst)->getRawDataValues();
+    if (FILE *f = fopen(outFileName.c_str(), "wb")) {
+      fwrite(rawData.data(), 1, rawData.size(), f);
+      fclose(f);
+      fprintf(stderr, "Serialized binary dumped to: `%s`\n",
+              outFileName.c_str());
+    } else {
+      fprintf(stderr, "Warning: Couldn't dump serialized binary to `%s`\n",
+              outFileName.c_str());
+    }
+  }
+
   GlobalVariable *serializedObj =
       new GlobalVariable(module, serializedCst->getType(), true,
                          GlobalValue::LinkageTypes::InternalLinkage,
@@ -144,9 +166,18 @@ static LogicalResult embedBinaryImpl(StringRef moduleName,
   Value *moduleObj = [&] {
     if (object.getFormat() == gpu::CompilationTarget::Assembly) {
       FunctionCallee moduleLoadFn = module.getOrInsertFunction(
-          "mgpuModuleLoadJIT", FunctionType::get(ptrTy, {ptrTy, i32Ty}, false));
+          "mgpuModuleLoadJIT", FunctionType::get(ptrTy,
+                                                 {
+                                                     ptrTy,
+                                                     i32Ty,
+                                                     i64Ty,
+                                                 },
+                                                 false));
+      Constant *binarySize =
+          ConstantInt::get(i64Ty, serializedStr.size() + (addNull ? 1 : 0));
       Constant *optValue = ConstantInt::get(i32Ty, optLevel);
-      return builder.CreateCall(moduleLoadFn, {serializedObj, optValue});
+      return builder.CreateCall(moduleLoadFn,
+                                {serializedObj, optValue, binarySize});
     }
     FunctionCallee moduleLoadFn = module.getOrInsertFunction(
         "mgpuModuleLoad", FunctionType::get(ptrTy, {ptrTy, i64Ty}, false));
@@ -154,7 +185,31 @@ static LogicalResult embedBinaryImpl(StringRef moduleName,
         ConstantInt::get(i64Ty, serializedStr.size() + (addNull ? 1 : 0));
     return builder.CreateCall(moduleLoadFn, {serializedObj, binarySize});
   }();
-  builder.CreateStore(moduleObj, modulePtr);
+  Value *testModuleObj = moduleObj;
+
+  // Dump the binary data from testModuleObj by inspecting the call's operand.
+  // testModuleObj is a CallInst: mgpuModuleLoad(serializedObj, binarySize)
+  // Navigate: CallInst -> arg0 (serializedObj GlobalVariable) -> initializer ->
+  // raw bytes.
+  {
+    std::string outFileName = moduleName.str() + "_loaded.spv";
+    auto *callInst = cast<CallInst>(testModuleObj);
+    auto *globalVar =
+        cast<GlobalVariable>(callInst->getArgOperand(0)->stripPointerCasts());
+    StringRef rawData = cast<ConstantDataArray>(globalVar->getInitializer())
+                            ->getRawDataValues();
+    if (FILE *f = fopen(outFileName.c_str(), "wb")) {
+      fwrite(rawData.data(), 1, rawData.size(), f);
+      fclose(f);
+      fprintf(stderr, "testModuleObj binary dumped to: `%s`\n",
+              outFileName.c_str());
+    } else {
+      fprintf(stderr, "Warning: Couldn't dump testModuleObj binary to `%s`\n",
+              outFileName.c_str());
+    }
+  }
+
+  builder.CreateStore(testModuleObj, modulePtr);
   builder.CreateRetVoid();
   appendToGlobalCtors(module, loadFn, /*Priority=*/123);
 

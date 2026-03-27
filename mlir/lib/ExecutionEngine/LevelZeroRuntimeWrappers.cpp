@@ -543,6 +543,7 @@ static ze_module_handle_t
 loadModule(const void *data, size_t dataSize,
            ze_module_format_t format = ZE_MODULE_FORMAT_NATIVE) {
   assert(data);
+
   ze_module_handle_t zeModule;
   ze_module_desc_t desc = {
       ZE_STRUCTURE_TYPE_MODULE_DESC, nullptr, format, dataSize,
@@ -755,10 +756,27 @@ extern "C" ze_module_handle_t mgpuModuleLoad(const void *data,
   return catchAll([&]() { return loadModule(data, gpuBlobSize); });
 }
 
-extern "C" ze_module_handle_t mgpuModuleLoadJIT(void *data, int optLevel) {
+extern "C" ze_module_handle_t mgpuModuleLoadJIT(void *data, int optLevel,
+                                                size_t dataSize) {
   return catchAll([&]() {
-    return loadModule(data, strlen(reinterpret_cast<char *>(data)),
-                      ZE_MODULE_FORMAT_IL_SPIRV);
+    size_t size =
+        dataSize > 0 ? dataSize : strlen(reinterpret_cast<char *>(data));
+    // Dump the module data to a .spv file for debugging.
+    {
+      static std::atomic<int> moduleIndex{0};
+      std::string outFileName =
+          "l0_module_" + std::to_string(moduleIndex++) + ".spv";
+      if (FILE *f = fopen(outFileName.c_str(), "wb")) {
+        fwrite(data, 1, size, f);
+        fclose(f);
+        std::cerr << "Module data dumped to: `" << outFileName << ",  "
+                  << "Size of the file: " << size << "`\n";
+      } else {
+        std::cerr << "Warning: Couldn't dump module data to `" << outFileName
+                  << "`\n";
+      }
+    }
+    return loadModule(data, size, ZE_MODULE_FORMAT_IL_SPIRV);
   });
 }
 

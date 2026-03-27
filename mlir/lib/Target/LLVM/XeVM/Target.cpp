@@ -31,6 +31,7 @@
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/Config/Targets.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
@@ -306,8 +307,56 @@ SPIRVSerializer::moduleToObject(llvm::Module &llvmModule) {
 #undef DEBUG_TYPE
 
     // Make sure to include the null terminator.
-    StringRef bin(serializedISA->c_str(), serializedISA->size() + 1);
+    StringRef bin(serializedISA->c_str(), serializedISA->size());
     return SmallVector<char, 0>(bin.begin(), bin.end());
+
+    std::string serializedSPIRVBinary;
+    std::string ErrMsg;
+    std::vector<std::string> Opts;
+    Opts.push_back(triple.str());
+    Opts.push_back(std::to_string(optLevel));
+
+    bool success =
+        SPIRVTranslateModule(&llvmModule, serializedSPIRVBinary, ErrMsg,
+                             getDefaultSPIRVExtensions(), Opts);
+
+    if (!success)
+      return getGPUModuleOp().emitError()
+             << "Target Machine unavailable for triple " << triple
+             << ", can't optimize with LLVM\n";
+
+    if (serializedSPIRVBinary.size() % 4)
+      return getGPUModuleOp().emitError()
+             << "SPIRV code size must be a multiple of 4.";
+
+    SmallVector<char, 0> spirvBinVec(serializedSPIRVBinary.begin(),
+                                     serializedSPIRVBinary.end());
+
+    // StringRef spirvBin(serializedSPIRVBinary.c_str(),
+    //                    serializedSPIRVBinary.size() - 1);
+
+    // //  Export serializedSPIRVBinary to a file for debugging and testing
+    // //  purposes. The file will be named as `<module_name>.spirv.bin`.
+
+    // SmallVector<char, 0> spirvBinVec(spirvBin.begin(), spirvBin.end());
+
+    // Export binary to a file.
+    {
+      std::string outFileName =
+          getGPUModuleOp().getNameAttr().getValue().str() + ".spirv.spv";
+      std::error_code exportEc;
+      llvm::raw_fd_ostream outStream(outFileName, exportEc);
+      if (!exportEc) {
+        outStream.write(spirvBinVec.data(), spirvBinVec.size());
+        llvm::errs() << "Binary exported to: `" << outFileName << "`\n";
+      } else {
+        llvm::errs() << "Warning: Couldn't export binary to file `"
+                     << outFileName << "`, error: " << exportEc.message()
+                     << "\n";
+      }
+    }
+
+    return spirvBinVec;
   }
 
   // Binary generation path for SPIR-V target. Optimization and SPIR-V
