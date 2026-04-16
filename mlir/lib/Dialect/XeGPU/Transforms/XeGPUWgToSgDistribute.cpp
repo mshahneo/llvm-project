@@ -366,7 +366,7 @@ struct WgToSgLoadNdOp : public OpConversionPattern<xegpu::LoadNdOp> {
       // The result shape accounts for array_length by expanding the last dimension (2D vector)
       SmallVector<int64_t> resultShape(srcShape.begin(), srcShape.end());
 
-      // Get the layout attributes and potentially update inst_data for array_length
+      // Get the layout attributes - keep descriptor layout unchanged for array_length
       SmallVector<NamedAttribute> newAttrs = xegpu::dropSgLayoutAndDataOnAttrs(op->getAttrs());
 
       if (auto blockAttr = dyn_cast_if_present<xegpu::BlockTensorDescAttr>(
@@ -377,36 +377,8 @@ struct WgToSgLoadNdOp : public OpConversionPattern<xegpu::LoadNdOp> {
           // Descriptor: 32x16 with array_length=2 -> Result: 32x32
           resultShape[resultShape.size() - 1] *= arrayLength;
 
-          // Update the layout attribute's inst_data to match the result shape
-          // The result vector has shape 32x32, so inst_data should be [32, 32]
-          if (auto layoutAttr = dyn_cast_if_present<xegpu::LayoutAttr>(tdescTy.getLayoutAttr())) {
-            auto instData = layoutAttr.getInstData();
-            if (instData) {
-              auto instDataArray = instData.asArrayRef();
-              if (!instDataArray.empty()) {
-                MLIRContext *ctx = rewriter.getContext();
-                SmallVector<int32_t> newInstData(instDataArray.begin(), instDataArray.end());
-                // Multiply FCD by array_length to match result shape
-                newInstData.back() *= arrayLength;
-
-                auto newLayoutAttr = xegpu::LayoutAttr::get(
-                    ctx,
-                    /*sg_layout=*/nullptr,
-                    /*sg_data=*/nullptr,
-                    DenseI32ArrayAttr::get(ctx, newInstData),
-                    layoutAttr.getLaneLayout(),
-                    layoutAttr.getLaneData(),
-                    layoutAttr.getOrder());
-
-                for (auto &attr : newAttrs) {
-                  if (attr.getName() == "layout") {
-                    attr.setValue(newLayoutAttr);
-                    break;
-                  }
-                }
-              }
-            }
-          }
+          // Keep the layout as-is from the descriptor (inst_data = [32, 16])
+          // The array_length semantic is encoded in BlockTensorDescAttr, not the layout
         }
       }
 
@@ -460,7 +432,7 @@ struct WgToSgLoadNdOpWithOffset : public OpConversionPattern<xegpu::LoadNdOp> {
       // Check if there's an array_length attribute and adjust result shape
       SmallVector<int64_t> resultShape(tdescTy.getShape().begin(), tdescTy.getShape().end());
 
-      // Get the layout and update inst_data when array_length is present
+      // Get the layout - use descriptor's layout for array_length cases
       xegpu::DistributeLayoutAttr layout = op.getLayoutAttr();
       if (auto blockAttr = dyn_cast_if_present<xegpu::BlockTensorDescAttr>(
               tdescTy.getEncoding())) {
@@ -470,28 +442,11 @@ struct WgToSgLoadNdOpWithOffset : public OpConversionPattern<xegpu::LoadNdOp> {
           // Descriptor: 32x16 with array_length=2 -> Result: 32x32
           resultShape[resultShape.size() - 1] *= arrayLength;
 
-          // Update the layout attribute's inst_data to match the result shape
-          // The result vector has shape 32x32, so inst_data should be [32, 32]
-          if (auto layoutAttr = dyn_cast_if_present<xegpu::LayoutAttr>(tdescTy.getLayoutAttr())) {
-            auto instData = layoutAttr.getInstData();
-            if (instData) {
-              auto instDataArray = instData.asArrayRef();
-              if (!instDataArray.empty()) {
-                MLIRContext *ctx = rewriter.getContext();
-                SmallVector<int32_t> newInstData(instDataArray.begin(), instDataArray.end());
-                // Multiply FCD by array_length to match result shape
-                newInstData.back() *= arrayLength;
-
-                layout = xegpu::LayoutAttr::get(
-                    ctx,
-                    /*sg_layout=*/nullptr,
-                    /*sg_data=*/nullptr,
-                    DenseI32ArrayAttr::get(ctx, newInstData),
-                    layoutAttr.getLaneLayout(),
-                    layoutAttr.getLaneData(),
-                    layoutAttr.getOrder());
-              }
-            }
+          // Use the descriptor's layout (inst_data = [32, 16]), not the operation's layout
+          // The array_length semantic is encoded in BlockTensorDescAttr, not the layout
+          layout = tdescTy.getLayoutAttr();
+          if (layout) {
+            layout = layout.dropSgLayoutAndData();
           }
         } else if (layout) {
           layout = layout.dropSgLayoutAndData();
