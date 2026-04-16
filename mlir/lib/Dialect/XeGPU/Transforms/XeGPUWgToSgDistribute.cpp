@@ -746,6 +746,41 @@ struct WgToSgConvertLayoutOp
     auto inputLayout = op.getInputLayout();
     auto targetLayout = op.getTargetLayout();
 
+    // Check if source is a load operation that might have been distributed with array_length
+    // If so, we need to adjust the input_layout to match the actual load layout
+    if (auto loadOp = op.getSource().getDefiningOp<xegpu::LoadNdOp>()) {
+      // Check if the load will be distributed with array_length
+      // This happens when inst_data FCD > 16
+      if (auto loadLayout = loadOp.getLayoutAttr()) {
+        if (loadLayout.isForWorkgroup()) {
+          auto instData = loadLayout.getEffectiveInstDataAsInt();
+          if (instData.size() >= 2 && instData[1] > 16) {
+            // This load will be distributed with array_length
+            // The distributed load will have inst_data with FCD = 16
+            SmallVector<int32_t> adjustedInstData;
+            for (auto val : instData)
+              adjustedInstData.push_back(static_cast<int32_t>(val));
+            adjustedInstData[1] = 16;  // FCD becomes 16 due to array_length
+
+            // Create adjusted input layout for convert_layout
+            // The input_layout should match the actual distributed load layout (with FCD=16)
+            // not the original workgroup layout (with FCD=32)
+            // We keep sg_layout and sg_data to maintain workgroup-level nature
+            // Cast loadLayout to LayoutAttr to access specific fields
+            auto layoutAttr = llvm::cast<xegpu::LayoutAttr>(loadLayout);
+            inputLayout = xegpu::LayoutAttr::get(
+                rewriter.getContext(),
+                layoutAttr.getSgLayout(),  // Keep workgroup layout
+                layoutAttr.getSgData(),     // Keep workgroup data
+                DenseI32ArrayAttr::get(rewriter.getContext(), adjustedInstData),
+                layoutAttr.getLaneLayout(),
+                layoutAttr.getLaneData(),
+                layoutAttr.getOrder());
+          }
+        }
+      }
+    }
+
     if (!inputLayout || !targetLayout || !inputLayout.isForWorkgroup() ||
         !targetLayout.isForWorkgroup())
       return rewriter.notifyMatchFailure(
