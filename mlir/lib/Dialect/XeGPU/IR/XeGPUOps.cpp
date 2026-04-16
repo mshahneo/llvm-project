@@ -615,9 +615,8 @@ LogicalResult LoadNdOp::verify() {
     }
   }
 
-  // Handle array_length: multiply the last dimension instead of adding a leading dimension
-  // Per BlockTensorDescAttr documentation: "If the TensorDesc shape is 8x16, with
-  // array_length = 2, the loaded block shape will be actually 8x32"
+  // Handle array_length: multiply the last dimension to create 2D vector
+  // With 2D representation: descriptor 8x16 with array_length=2 -> result 8x32
   if (auto blockAttr = llvm::dyn_cast_if_present<BlockTensorDescAttr>(
           tdescTy.getEncoding())) {
     auto array_len = blockAttr.getArrayLength().getInt();

@@ -363,7 +363,7 @@ struct WgToSgLoadNdOp : public OpConversionPattern<xegpu::LoadNdOp> {
           dyn_cast<xegpu::TensorDescType>(src.getType());
       ArrayRef<int64_t> srcShape = tdescTy.getShape();
 
-      // The result shape accounts for array_length by expanding the last dimension
+      // The result shape accounts for array_length by expanding the last dimension (2D vector)
       SmallVector<int64_t> resultShape(srcShape.begin(), srcShape.end());
 
       // Get the layout attributes and potentially update inst_data for array_length
@@ -373,7 +373,7 @@ struct WgToSgLoadNdOp : public OpConversionPattern<xegpu::LoadNdOp> {
               tdescTy.getEncoding())) {
         int64_t arrayLength = blockAttr.getArrayLength().getInt();
         if (arrayLength > 1) {
-          // Multiply the last dimension by array_length
+          // Multiply the last dimension by array_length to create 2D vector
           // Descriptor: 32x16 with array_length=2 -> Result: 32x32
           resultShape[resultShape.size() - 1] *= arrayLength;
 
@@ -466,7 +466,7 @@ struct WgToSgLoadNdOpWithOffset : public OpConversionPattern<xegpu::LoadNdOp> {
               tdescTy.getEncoding())) {
         int64_t arrayLength = blockAttr.getArrayLength().getInt();
         if (arrayLength > 1) {
-          // Multiply the last dimension by array_length
+          // Multiply the last dimension by array_length to create 2D vector
           // Descriptor: 32x16 with array_length=2 -> Result: 32x32
           resultShape[resultShape.size() - 1] *= arrayLength;
 
