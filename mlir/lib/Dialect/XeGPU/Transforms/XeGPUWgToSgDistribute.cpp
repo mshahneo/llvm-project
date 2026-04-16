@@ -193,9 +193,56 @@ struct WgToSgCreateNdOp : public OpConversionPattern<xegpu::CreateNdDescOp> {
     Type elemTy = tdescTy.getElementType();
     xegpu::DistributeLayoutAttr layout = tdescTy.getLayoutAttr();
     SmallVector<int64_t> sgShape = getSgShapeAndCount(wgShape, layout).first;
+
+    // Check if inst_data FCD > 16 and add array_length attribute
+    Attribute newEncoding = tdescTy.getEncoding();
+    auto droppedLayout = layout.dropSgLayoutAndData();
+    xegpu::LayoutAttr newLayout = dyn_cast_if_present<xegpu::LayoutAttr>(droppedLayout);
+
+    if (newLayout) {
+      auto instData = newLayout.getInstData();
+      if (instData) {
+        auto instDataArray = instData.asArrayRef();
+        if (!instDataArray.empty()) {
+          int64_t fcd = instDataArray.back();
+          if (fcd > 16) {
+            // Calculate array_length = FCD / 16
+            int64_t arrayLength = fcd / 16;
+
+            // Create block_tdesc_attr with array_length
+            auto blockAttr = xegpu::BlockTensorDescAttr::get(
+                ctx, xegpu::MemorySpace::Global, arrayLength, true);
+            newEncoding = blockAttr;
+
+            // Update inst_data: change FCD to 16
+            SmallVector<int32_t> newInstData;
+            for (int32_t val : instDataArray)
+              newInstData.push_back(val);
+            newInstData.back() = 16;
+
+            // Create new layout with updated inst_data
+            auto laneLayout = newLayout.getLaneLayout();
+            auto laneData = newLayout.getLaneData();
+            auto order = newLayout.getOrder();
+            newLayout = xegpu::LayoutAttr::get(
+                ctx,
+                /*sg_layout=*/nullptr,
+                /*sg_data=*/nullptr,
+                DenseI32ArrayAttr::get(ctx, newInstData),
+                laneLayout,
+                laneData,
+                order);
+
+            // Update sgShape: change FCD to 16
+            sgShape.back() = 16;
+          }
+        }
+      }
+    }
+
     auto newTdescTy =
-        xegpu::TensorDescType::get(ctx, sgShape, elemTy, tdescTy.getEncoding(),
-                                   layout.dropSgLayoutAndData());
+        xegpu::TensorDescType::get(ctx, sgShape, elemTy, newEncoding,
+                                   newLayout);
 
     SmallVector<Value> newOps;
     for (auto offsets : offsetsList) {
@@ -238,9 +285,56 @@ struct WgToSgCreateNdOpNoOffset
     SmallVector<int64_t> sgShape;
     int count;
     std::tie(sgShape, count) = getSgShapeAndCount(wgShape, layout);
+
+    // Check if inst_data FCD > 16 and add array_length attribute
+    Attribute newEncoding = tdescTy.getEncoding();
+    auto droppedLayout = layout.dropSgLayoutAndData();
+    xegpu::LayoutAttr newLayout = dyn_cast_if_present<xegpu::LayoutAttr>(droppedLayout);
+
+    if (newLayout) {
+      auto instData = newLayout.getInstData();
+      if (instData) {
+        auto instDataArray = instData.asArrayRef();
+        if (!instDataArray.empty()) {
+          int64_t fcd = instDataArray.back();
+          if (fcd > 16) {
+            // Calculate array_length = FCD / 16
+            int64_t arrayLength = fcd / 16;
+
+            // Create block_tdesc_attr with array_length
+            auto blockAttr = xegpu::BlockTensorDescAttr::get(
+                ctx, xegpu::MemorySpace::Global, arrayLength, true);
+            newEncoding = blockAttr;
+
+            // Update inst_data: change FCD to 16
+            SmallVector<int32_t> newInstData;
+            for (int32_t val : instDataArray)
+              newInstData.push_back(val);
+            newInstData.back() = 16;
+
+            // Create new layout with updated inst_data
+            auto laneLayout = newLayout.getLaneLayout();
+            auto laneData = newLayout.getLaneData();
+            auto order = newLayout.getOrder();
+            newLayout = xegpu::LayoutAttr::get(
+                ctx,
+                /*sg_layout=*/nullptr,
+                /*sg_data=*/nullptr,
+                DenseI32ArrayAttr::get(ctx, newInstData),
+                laneLayout,
+                laneData,
+                order);
+
+            // Update sgShape: change FCD to 16
+            sgShape.back() = 16;
+          }
+        }
+      }
+    }
+
     xegpu::TensorDescType newTdescTy =
-        xegpu::TensorDescType::get(ctx, sgShape, elemTy, tdescTy.getEncoding(),
-                                   layout.dropSgLayoutAndData());
+        xegpu::TensorDescType::get(ctx, sgShape, elemTy, newEncoding,
+                                   newLayout);
 
     SmallVector<Value> newCreateNdOps(count);
     std::generate(newCreateNdOps.begin(), newCreateNdOps.end(), [&]() {
@@ -268,10 +362,57 @@ struct WgToSgLoadNdOp : public OpConversionPattern<xegpu::LoadNdOp> {
       xegpu::TensorDescType tdescTy =
           dyn_cast<xegpu::TensorDescType>(src.getType());
       ArrayRef<int64_t> srcShape = tdescTy.getShape();
-      VectorType newResTy = VectorType::get(srcShape, tdescTy.getElementType());
+
+      // The result shape accounts for array_length by expanding the last dimension
+      SmallVector<int64_t> resultShape(srcShape.begin(), srcShape.end());
+
+      // Get the layout attributes and potentially update inst_data for array_length
+      SmallVector<NamedAttribute> newAttrs = xegpu::dropSgLayoutAndDataOnAttrs(op->getAttrs());
+
+      if (auto blockAttr = dyn_cast_if_present<xegpu::BlockTensorDescAttr>(
+              tdescTy.getEncoding())) {
+        int64_t arrayLength = blockAttr.getArrayLength().getInt();
+        if (arrayLength > 1) {
+          // Multiply the last dimension by array_length
+          // Descriptor: 32x16 with array_length=2 -> Result: 32x32
+          resultShape[resultShape.size() - 1] *= arrayLength;
+
+          // Update the layout attribute's inst_data to match the result shape
+          // The result vector has shape 32x32, so inst_data should be [32, 32]
+          if (auto layoutAttr = dyn_cast_if_present<xegpu::LayoutAttr>(tdescTy.getLayoutAttr())) {
+            auto instData = layoutAttr.getInstData();
+            if (instData) {
+              auto instDataArray = instData.asArrayRef();
+              if (!instDataArray.empty()) {
+                MLIRContext *ctx = rewriter.getContext();
+                SmallVector<int32_t> newInstData(instDataArray.begin(), instDataArray.end());
+                // Multiply FCD by array_length to match result shape
+                newInstData.back() *= arrayLength;
+
+                auto newLayoutAttr = xegpu::LayoutAttr::get(
+                    ctx,
+                    /*sg_layout=*/nullptr,
+                    /*sg_data=*/nullptr,
+                    DenseI32ArrayAttr::get(ctx, newInstData),
+                    layoutAttr.getLaneLayout(),
+                    layoutAttr.getLaneData(),
+                    layoutAttr.getOrder());
+
+                for (auto &attr : newAttrs) {
+                  if (attr.getName() == "layout") {
+                    attr.setValue(newLayoutAttr);
+                    break;
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+
+      VectorType newResTy = VectorType::get(resultShape, tdescTy.getElementType());
       auto newLoadOp = xegpu::LoadNdOp::create(
-          rewriter, op.getLoc(), newResTy, src,
-          xegpu::dropSgLayoutAndDataOnAttrs(op->getAttrs()));
+          rewriter, op.getLoc(), newResTy, src, newAttrs);
       newLoadOps.push_back(newLoadOp);
     }
     rewriter.replaceOpWithMultiple(op, {newLoadOps});
@@ -311,20 +452,62 @@ struct WgToSgLoadNdOpWithOffset : public OpConversionPattern<xegpu::LoadNdOp> {
     if (failed(genOffsetsList(rewriter, op, offsetsList)))
       return failure();
 
-    xegpu::DistributeLayoutAttr layout = op.getLayoutAttr();
-    if (layout)
-      layout = layout.dropSgLayoutAndData();
     SmallVector<Value> newOps;
     for (auto [tdesc, offsets] :
          llvm::zip(adaptor.getTensorDesc(), offsetsList)) {
       auto tdescTy = dyn_cast<xegpu::TensorDescType>(tdesc.getType());
+
+      // Check if there's an array_length attribute and adjust result shape
+      SmallVector<int64_t> resultShape(tdescTy.getShape().begin(), tdescTy.getShape().end());
+
+      // Get the layout and update inst_data when array_length is present
+      xegpu::DistributeLayoutAttr layout = op.getLayoutAttr();
+      if (auto blockAttr = dyn_cast_if_present<xegpu::BlockTensorDescAttr>(
+              tdescTy.getEncoding())) {
+        int64_t arrayLength = blockAttr.getArrayLength().getInt();
+        if (arrayLength > 1) {
+          // Multiply the last dimension by array_length
+          // Descriptor: 32x16 with array_length=2 -> Result: 32x32
+          resultShape[resultShape.size() - 1] *= arrayLength;
+
+          // Update the layout attribute's inst_data to match the result shape
+          // The result vector has shape 32x32, so inst_data should be [32, 32]
+          if (auto layoutAttr = dyn_cast_if_present<xegpu::LayoutAttr>(tdescTy.getLayoutAttr())) {
+            auto instData = layoutAttr.getInstData();
+            if (instData) {
+              auto instDataArray = instData.asArrayRef();
+              if (!instDataArray.empty()) {
+                MLIRContext *ctx = rewriter.getContext();
+                SmallVector<int32_t> newInstData(instDataArray.begin(), instDataArray.end());
+                // Multiply FCD by array_length to match result shape
+                newInstData.back() *= arrayLength;
+
+                layout = xegpu::LayoutAttr::get(
+                    ctx,
+                    /*sg_layout=*/nullptr,
+                    /*sg_data=*/nullptr,
+                    DenseI32ArrayAttr::get(ctx, newInstData),
+                    layoutAttr.getLaneLayout(),
+                    layoutAttr.getLaneData(),
+                    layoutAttr.getOrder());
+              }
+            }
+          }
+        } else if (layout) {
+          layout = layout.dropSgLayoutAndData();
+        }
+      } else if (layout) {
+        layout = layout.dropSgLayoutAndData();
+      }
+
       VectorType newResTy =
-          VectorType::get(tdescTy.getShape(), tdescTy.getElementType());
-      auto newOp = xegpu::LoadNdOp::create(
+          VectorType::get(resultShape, tdescTy.getElementType());
+      auto newLoadOp = xegpu::LoadNdOp::create(
           rewriter, op.getLoc(), newResTy, tdesc, offsets,
           /*packed = */ nullptr, /*transpose = */ nullptr, op.getL1HintAttr(),
           op.getL2HintAttr(), op.getL3HintAttr(), layout);
-      newOps.push_back(newOp);
+
+      newOps.push_back(newLoadOp);
     }
     rewriter.replaceOpWithMultiple(op, {newOps});
 
