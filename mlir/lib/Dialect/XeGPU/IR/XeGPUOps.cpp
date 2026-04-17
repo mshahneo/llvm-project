@@ -520,9 +520,9 @@ void LoadNdOp::build(OpBuilder &builder, OperationState &state, Type retType,
                      xegpu::CachePolicyAttr l3_hint) {
 
   return build(builder, state, retType, tensorDesc, ValueRange(),
-               DenseI64ArrayAttr(), packed, transpose, nullptr, /*transpose_bit_width*/
+               DenseI64ArrayAttr(), packed, transpose,
                l1_hint, l2_hint,
-               l3_hint, /*anchor_layout=*/nullptr);
+               l3_hint, /*layout=*/nullptr);
 }
 
 void LoadNdOp::build(OpBuilder &builder, OperationState &state, Type retType,
@@ -539,8 +539,8 @@ void LoadNdOp::build(OpBuilder &builder, OperationState &state, Type retType,
   auto staticOffsetsAttr = builder.getDenseI64ArrayAttr(staticOffsets);
 
   build(builder, state, retType, tensorDesc, dynamicOffsets, staticOffsetsAttr,
-        packed, transpose, nullptr /*transpose_bit_width*/, l1_hint, l2_hint, l3_hint,
-        /*anchor_layout=*/layout);
+        packed, transpose, l1_hint, l2_hint, l3_hint,
+        /*layout=*/layout);
 }
 
 LogicalResult LoadNdOp::verify() {
@@ -602,7 +602,9 @@ LogicalResult LoadNdOp::verify() {
       mlir::emitWarning(getLoc()) << "Invalid transpose attr. It is ignored.";
   }
 
-  if (getPacked() || getTransposeBitWidth() == 32) {
+  bool hasTranspose32 = getTranspose() &&
+                        valueTy.getElementType().getIntOrFloatBitWidth() == 32;
+  if (getPacked() || hasTranspose32) {
     if (tdescTy.getRank() == 2) {
       const int axis = 0;
       auto vnni_factor = valueShape.back();

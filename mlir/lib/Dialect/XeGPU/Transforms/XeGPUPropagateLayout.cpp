@@ -1474,15 +1474,6 @@ static LogicalResult updateOp(mlir::OpBuilder &builder, mlir::Operation *op,
     // If the result is a tensor descriptor type, update the tensor desc type
     // with layout.
     if (auto tensorDescTy = dyn_cast<xegpu::TensorDescType>(resultType)) {
-      // Skip if encoding is BlockTensorDescAttr with array_length > 1
-      // The layout is already correctly embedded in the descriptor
-      if (auto blockAttr = dyn_cast_if_present<xegpu::BlockTensorDescAttr>(
-              tensorDescTy.getEncoding())) {
-        if (blockAttr.getArrayLength().getInt() > 1) {
-          continue;
-        }
-      }
-
       auto typeWithLayout = xegpu::TensorDescType::get(
           tensorDescTy.getContext(), tensorDescTy.getShape(),
           tensorDescTy.getElementType(), tensorDescTy.getEncoding(), layout);
