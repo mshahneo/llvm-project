@@ -948,6 +948,9 @@ struct WgToSgLoadGatherOpWithOffset
   matchAndRewrite(xegpu::LoadGatherOp op, OneToNOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
 
+    if (!op.getOffsets())
+      return failure();
+
     Location loc = op.getLoc();
     VectorType resultType = dyn_cast<VectorType>(op.getResult().getType());
     if (!resultType)
@@ -998,6 +1001,9 @@ struct WgToSgStoreScatterOpWithOffset
   LogicalResult
   matchAndRewrite(xegpu::StoreScatterOp op, OneToNOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
+
+    if (!op.getOffsets())
+      return failure();
 
     Location loc = op.getLoc();
     VectorType valueType = dyn_cast<VectorType>(op.getValue().getType());
