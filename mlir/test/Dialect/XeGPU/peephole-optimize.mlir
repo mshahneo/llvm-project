@@ -253,17 +253,15 @@ gpu.func @array_length(%arg0: vector<8x16xf16>, %arg1: memref<256x256xf16>, %arg
   %4:4 = scf.for %arg3 = %c0 to %c256 step %c32 iter_args(%arg4 = %1, %arg5 = %1, %arg6 = %1, %arg7 = %1)
     -> (vector<8x16xf32>, vector<8x16xf32>, vector<8x16xf32>, vector<8x16xf32>) {
     %6 = xegpu.load_nd %3[%c0, %arg3]  { layout = #b }
-      : !xegpu.tensor_desc<32x16xf16, #b, #xegpu.block_tdesc_attr<array_length = 2 : i64>> -> vector<2x32x16xf16>
-    %19 = vector.extract %6[0] { layout_result_0 = #b } : vector<32x16xf16> from vector<2x32x16xf16>
-    %20 = vector.extract %6[1] { layout_result_0 = #b } : vector<32x16xf16> from vector<2x32x16xf16>
-    %7 = vector.extract_strided_slice %19 {offsets = [0, 0], sizes = [16, 16], strides = [1, 1], layout_result_0 = #b }
-      : vector<32x16xf16> to vector<16x16xf16>
-    %8 = vector.extract_strided_slice %19 {offsets = [16, 0], sizes = [16, 16], strides = [1, 1], layout_result_0 = #b }
-      : vector<32x16xf16> to vector<16x16xf16>
-    %9 = vector.extract_strided_slice %20 {offsets = [0, 0], sizes = [16, 16], strides = [1, 1], layout_result_0 = #b }
-      : vector<32x16xf16> to vector<16x16xf16>
-    %10 = vector.extract_strided_slice %20 {offsets = [16, 0], sizes = [16, 16], strides = [1, 1], layout_result_0 = #b }
-      : vector<32x16xf16> to vector<16x16xf16>
+      : !xegpu.tensor_desc<32x16xf16, #b, #xegpu.block_tdesc_attr<array_length = 2 : i64>> -> vector<64x16xf16>
+    %7 = vector.extract_strided_slice %6 {offsets = [0, 0], sizes = [16, 16], strides = [1, 1], layout_result_0 = #b }
+      : vector<64x16xf16> to vector<16x16xf16>
+    %8 = vector.extract_strided_slice %6 {offsets = [16, 0], sizes = [16, 16], strides = [1, 1], layout_result_0 = #b }
+      : vector<64x16xf16> to vector<16x16xf16>
+    %9 = vector.extract_strided_slice %6 {offsets = [32, 0], sizes = [16, 16], strides = [1, 1], layout_result_0 = #b }
+      : vector<64x16xf16> to vector<16x16xf16>
+    %10 = vector.extract_strided_slice %6 {offsets = [48, 0], sizes = [16, 16], strides = [1, 1], layout_result_0 = #b }
+      : vector<64x16xf16> to vector<16x16xf16>
     %11 = vector.transpose %7, [1, 0]  { layout_result_0 = #bt } : vector<16x16xf16> to vector<16x16xf16>
     %12 = vector.transpose %8, [1, 0]  { layout_result_0 = #bt } : vector<16x16xf16> to vector<16x16xf16>
     %13 = vector.transpose %9, [1, 0]  { layout_result_0 = #bt } : vector<16x16xf16> to vector<16x16xf16>
