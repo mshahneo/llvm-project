@@ -613,20 +613,13 @@ LogicalResult LoadNdOp::verify() {
     }
   }
 
-  // Handle array_length. Two result shape conventions are accepted:
-  //   * Legacy: leading array_length dimension prepended, e.g. descriptor
-  //     16x16 with array_length=2 -> [2, 16, 16].
-  //   * Stacked 2D: array blocks stacked along the non-FCD (first) dimension,
-  //     e.g. descriptor 16x16 with array_length=2 -> [32, 16].
+  // With array_length > 1, the array blocks are stacked along the non-FCD
+  // (first) dimension, e.g. descriptor 16x16 with array_length=2 -> [32, 16].
   auto array_len = tdescTy.getArrayLength();
-  SmallVector<int64_t> stackedShape(tdescShape);
-  SmallVector<int64_t> prependedShape(tdescShape);
-  if (array_len > 1 && !tdescShape.empty()) {
-    stackedShape[0] *= array_len;
-    prependedShape.insert(prependedShape.begin(), array_len);
-  }
+  if (array_len > 1 && !tdescShape.empty())
+    tdescShape[0] *= array_len;
 
-  if (valueShape != stackedShape && valueShape != prependedShape)
+  if (tdescShape != valueShape)
     return emitOpError() << "Result shape " << makeString(valueShape)
                          << " is not consistent with tensor descriptor "
                          << tdescTy;

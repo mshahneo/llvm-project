@@ -349,10 +349,22 @@ public:
     VectorType origVectorType =
         VectorType::get(origDataShape, adaptorType.getElementType());
     Value data;
-    // Orig data shape is 3D for the array length case.
+    // With array_length > 1, the original load result is a single 2D vector
+    // with the array blocks stacked along the non-FCD dimension. Emit one HW
+    // load per array slice, bitcast each back to the original element type,
+    // and stitch them together via insert_strided_slice into one stacked
+    // vector that matches the original loadNdOp result type.
     if (origTensorDescType.getArrayLength() > 1) {
-      SmallVector<Value> arraySlices;
-      for (int64_t i = 0; i < origTensorDescType.getArrayLength(); ++i) {
+      auto arrayLen = origTensorDescType.getArrayLength();
+      auto origShape = origTensorDescType.getShape();
+      auto bitcastType =
+          VectorType::get(origShape, origTensorDescType.getElementType());
+      Value stacked = arith::ConstantOp::create(
+          rewriter, loadNdOp->getLoc(), loadNdOp.getType(),
+          rewriter.getZeroAttr(loadNdOp.getType()));
+      xegpu::setTemporaryLayout(cast<OpResult>(stacked),
+                                origTensorDescType.getLayoutAttr());
+      for (int64_t i = 0; i < arrayLen; ++i) {
         Value slice = arith::ConstantOp::create(
             rewriter, loadNdOp->getLoc(), origVectorType,
             rewriter.getZeroAttr(origVectorType));
@@ -370,17 +382,18 @@ public:
             rewriter, cast<TypedValue<VectorType>>(slice), modifiedOffsets,
             cast<TypedValue<xegpu::TensorDescType>>(adaptor.getTensorDesc()),
             loadNdOp);
-        // BitCast back to original load shape without array length.
-        auto bitcastType = VectorType::get(origTensorDescType.getShape(),
-                                           origTensorDescType.getElementType());
         auto bitCastOp = vector::BitCastOp::create(rewriter, loadNdOp->getLoc(),
                                                    bitcastType, slice);
-        // BitCastOp must have the same layout as the original loadNdOp.
         xegpu::setTemporaryLayout(bitCastOp->getOpResult(0),
                                   origTensorDescType.getLayoutAttr());
-        arraySlices.push_back(bitCastOp.getResult());
+        auto insertOp = vector::InsertStridedSliceOp::create(
+            rewriter, loadNdOp->getLoc(), bitCastOp.getResult(), stacked,
+            ArrayRef<int64_t>{i * origShape[0], 0}, ArrayRef<int64_t>{1, 1});
+        xegpu::setTemporaryLayout(insertOp->getOpResult(0),
+                                  origTensorDescType.getLayoutAttr());
+        stacked = insertOp.getResult();
       }
-      rewriter.replaceOpWithMultiple(loadNdOp, {arraySlices});
+      rewriter.replaceOp(loadNdOp, stacked);
       return success();
     }
     data = arith::ConstantOp::create(
