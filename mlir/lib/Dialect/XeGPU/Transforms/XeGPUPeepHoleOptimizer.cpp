@@ -357,6 +357,56 @@ public:
     if (origTensorDescType.getArrayLength() > 1) {
       auto arrayLen = origTensorDescType.getArrayLength();
       auto origShape = origTensorDescType.getShape();
+      // Special case: a single HW block covers the full stacked data because
+      // per-slice FCD (in the new element type) is smaller than the HW block
+      // width. Emit one HW load of the natural [origRows, origFCD * arrayLen]
+      // shape, then split it column-wise into per-slice pieces and stitch
+      // those into the stacked [origRows * arrayLen, origFCD] result.
+      if (origDataShape[0] == hwSupportedShape[0] &&
+          origDataShape[1] < hwSupportedShape[1] &&
+          origDataShape[1] * arrayLen == hwSupportedShape[1]) {
+        auto hwVecType =
+            VectorType::get(hwSupportedShape, adaptorType.getElementType());
+        Value hwData =
+            arith::ConstantOp::create(rewriter, loadNdOp->getLoc(), hwVecType,
+                                      rewriter.getZeroAttr(hwVecType));
+        hwData = generateLoads(
+            rewriter, cast<TypedValue<VectorType>>(hwData), modifiedOffsets,
+            cast<TypedValue<xegpu::TensorDescType>>(adaptor.getTensorDesc()),
+            loadNdOp);
+        // Bitcast to the original element type: shape is
+        // [origRows, origFCD * arrayLen] (one contiguous block).
+        auto wideType = VectorType::get({origShape[0], origShape[1] * arrayLen},
+                                        origTensorDescType.getElementType());
+        auto bitCastOp = vector::BitCastOp::create(rewriter, loadNdOp->getLoc(),
+                                                   wideType, hwData);
+        xegpu::setTemporaryLayout(bitCastOp->getOpResult(0),
+                                  origTensorDescType.getLayoutAttr());
+        // Split the wide block into arrayLen column groups and stitch them
+        // into the stacked result via insert_strided_slice.
+        Value stacked = arith::ConstantOp::create(
+            rewriter, loadNdOp->getLoc(), loadNdOp.getType(),
+            rewriter.getZeroAttr(loadNdOp.getType()));
+        xegpu::setTemporaryLayout(cast<OpResult>(stacked),
+                                  origTensorDescType.getLayoutAttr());
+        for (int64_t i = 0; i < arrayLen; ++i) {
+          auto extractOp = vector::ExtractStridedSliceOp::create(
+              rewriter, loadNdOp->getLoc(), bitCastOp.getResult(),
+              ArrayRef<int64_t>{0, i * origShape[1]},
+              ArrayRef<int64_t>{origShape[0], origShape[1]},
+              ArrayRef<int64_t>{1, 1});
+          xegpu::setTemporaryLayout(extractOp->getOpResult(0),
+                                    origTensorDescType.getLayoutAttr());
+          auto insertOp = vector::InsertStridedSliceOp::create(
+              rewriter, loadNdOp->getLoc(), extractOp.getResult(), stacked,
+              ArrayRef<int64_t>{i * origShape[0], 0}, ArrayRef<int64_t>{1, 1});
+          xegpu::setTemporaryLayout(insertOp->getOpResult(0),
+                                    origTensorDescType.getLayoutAttr());
+          stacked = insertOp.getResult();
+        }
+        rewriter.replaceOp(loadNdOp, stacked);
+        return success();
+      }
       auto bitcastType =
           VectorType::get(origShape, origTensorDescType.getElementType());
       Value stacked = arith::ConstantOp::create(
@@ -410,6 +460,128 @@ public:
     xegpu::setTemporaryLayout(bitCastOp->getOpResult(0),
                               origTensorDescType.getLayoutAttr());
     rewriter.replaceOp(loadNdOp, bitCastOp);
+    return success();
+  }
+};
+
+/// Detect a vector.transpose left malformed by the array-length pass: its
+/// operand is the stacked 2D load result of shape [origRows * arrayLength,
+/// newFCD], but its result type still reflects the pre-array-length shape
+/// (result shape is not the [1,0] permutation of the operand shape).
+static bool isMalformedArrayLengthTranspose(vector::TransposeOp transposeOp) {
+  auto perm = transposeOp.getPermutation();
+  if (perm.size() != 2 || perm[0] != 1 || perm[1] != 0)
+    return false;
+  auto sourceType = dyn_cast<VectorType>(transposeOp.getVector().getType());
+  auto resultType = transposeOp.getResultVectorType();
+  if (!sourceType || sourceType.getRank() != 2 || resultType.getRank() != 2)
+    return false;
+  auto loadOp = transposeOp.getVector().getDefiningOp<xegpu::LoadNdOp>();
+  if (!loadOp)
+    return false;
+  auto tdescType = loadOp.getTensorDescType();
+  int64_t arrayLength = tdescType.getArrayLength();
+  if (arrayLength <= 1)
+    return false;
+  // Operand must have the stacked 2D shape produced by the array-length pass.
+  if (sourceType.getShape()[0] != tdescType.getShape()[0] * arrayLength ||
+      sourceType.getShape()[1] != tdescType.getShape()[1])
+    return false;
+  // Transpose is malformed iff result shape isn't the [1,0] permutation of
+  // the operand shape.
+  return resultType.getShape()[0] != sourceType.getShape()[1] ||
+         resultType.getShape()[1] != sourceType.getShape()[0];
+}
+
+/// Legalize a vector.transpose left malformed by the array-length pass by
+/// splitting the stacked operand into per-slice extracts and transposing each
+/// slice. The per-slice transposed values are handed back as a 1-to-N
+/// replacement; a partner pattern absorbs them directly into the downstream
+/// vector.insert_strided_slice consumer. Avoiding the intermediate stacked
+/// vector keeps the post-distribution shuffle lists small.
+class XeGPUTransposeOpPattern final
+    : public OpConversionPattern<vector::TransposeOp> {
+public:
+  using OpConversionPattern<vector::TransposeOp>::OpConversionPattern;
+  LogicalResult
+  matchAndRewrite(vector::TransposeOp transposeOp, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    if (!isMalformedArrayLengthTranspose(transposeOp))
+      return failure();
+    auto loadOp = transposeOp.getVector().getDefiningOp<xegpu::LoadNdOp>();
+    auto tdescType = loadOp.getTensorDescType();
+    int64_t arrayLength = tdescType.getArrayLength();
+    int64_t origRows = tdescType.getShape()[0];
+    int64_t newFCD = tdescType.getShape()[1];
+    auto sourceType = cast<VectorType>(transposeOp.getVector().getType());
+    auto elemTy = sourceType.getElementType();
+    auto loc = transposeOp.getLoc();
+
+    auto transType = VectorType::get({newFCD, origRows}, elemTy);
+    SmallVector<Value> slices;
+    slices.reserve(arrayLength);
+    for (int64_t i = 0; i < arrayLength; ++i) {
+      auto slice = vector::ExtractStridedSliceOp::create(
+          rewriter, loc, transposeOp.getVector(),
+          ArrayRef<int64_t>{i * origRows, 0},
+          ArrayRef<int64_t>{origRows, newFCD}, ArrayRef<int64_t>{1, 1});
+      auto transposed = vector::TransposeOp::create(
+          rewriter, loc, transType, slice.getResult(), ArrayRef<int64_t>{1, 0});
+      slices.push_back(transposed.getResult());
+    }
+    rewriter.replaceOpWithMultiple(transposeOp, {slices});
+    return success();
+  }
+};
+
+/// Partner to XeGPUTransposeOpPattern. When a vector.insert_strided_slice
+/// consumes a transpose that was split into N per-slice values, emit N
+/// inserts directly into the destination at offsets computed from the
+/// original insert offset plus each slice's row position. This absorbs the
+/// per-slice pieces without materializing the intermediate transpose-result
+/// vector.
+class XeGPUInsertStridedSliceOpPattern final
+    : public OpConversionPattern<vector::InsertStridedSliceOp> {
+public:
+  using OpConversionPattern<vector::InsertStridedSliceOp>::OpConversionPattern;
+  LogicalResult
+  matchAndRewrite(vector::InsertStridedSliceOp insertOp,
+                  OneToNOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    ValueRange splitSrcs = adaptor.getValueToStore();
+    if (splitSrcs.size() <= 1)
+      return failure();
+    auto origSrcType = insertOp.getSourceVectorType();
+    auto dstType = insertOp.getType();
+    if (origSrcType.getRank() != 2 || dstType.getRank() != 2)
+      return failure();
+    int64_t arrayLength = static_cast<int64_t>(splitSrcs.size());
+    auto sliceType = dyn_cast<VectorType>(splitSrcs.front().getType());
+    if (!sliceType || sliceType.getRank() != 2)
+      return failure();
+    int64_t sliceRows = sliceType.getShape()[0];
+    // Per-slice rows must tile the original source rows exactly.
+    if (sliceRows * arrayLength != origSrcType.getShape()[0] ||
+        sliceType.getShape()[1] != origSrcType.getShape()[1])
+      return failure();
+    auto origOffsets = insertOp.getOffsets().getValue();
+    auto origStrides = insertOp.getStrides().getValue();
+    if (origOffsets.size() != 2 || origStrides.size() != 2)
+      return failure();
+    int64_t origRowOffset = cast<IntegerAttr>(origOffsets[0]).getInt();
+    int64_t origColOffset = cast<IntegerAttr>(origOffsets[1]).getInt();
+    SmallVector<int64_t> strides = {cast<IntegerAttr>(origStrides[0]).getInt(),
+                                    cast<IntegerAttr>(origStrides[1]).getInt()};
+    Value dest = adaptor.getDest().front();
+    auto loc = insertOp.getLoc();
+    for (int64_t i = 0; i < arrayLength; ++i) {
+      SmallVector<int64_t> offsets = {origRowOffset + i * sliceRows,
+                                      origColOffset};
+      auto newInsert = vector::InsertStridedSliceOp::create(
+          rewriter, loc, splitSrcs[i], dest, offsets, strides);
+      dest = newInsert.getResult();
+    }
+    rewriter.replaceOp(insertOp, dest);
     return success();
   }
 };
@@ -529,6 +701,7 @@ private:
 void xegpu::populateXeGPUPeepHoleOptimizerPatterns(
     RewritePatternSet &patterns) {
   patterns.add<XeGPUCreateNdDescOpPattern, XeGPULoadNdDescOpPattern,
+               XeGPUTransposeOpPattern, XeGPUInsertStridedSliceOpPattern,
                VectorExtractOpPattern, MultiRed2dOpPattern>(
       patterns.getContext());
 }
@@ -593,6 +766,23 @@ struct XeGPUPeepHoleOptimizerPass final
           auto laneLayout = layout.getEffectiveLaneLayoutAsInt();
           auto laneData = layout.getEffectiveLaneDataAsInt();
           return !canBeOptimizedForTranspose(laneLayout, laneData);
+        });
+
+    // vector.transpose left malformed by the array-length pass (operand is
+    // the stacked array-length load, result shape doesn't match the [1,0]
+    // permutation of the operand shape) must be converted.
+    target.addDynamicallyLegalOp<vector::TransposeOp>(
+        [&](vector::TransposeOp transposeOp) {
+          return !isMalformedArrayLengthTranspose(transposeOp);
+        });
+    // vector.insert_strided_slice consuming such a transpose is converted
+    // too, so that the per-slice values can be absorbed directly into the
+    // destination without materializing the intermediate transpose result.
+    target.addDynamicallyLegalOp<vector::InsertStridedSliceOp>(
+        [&](vector::InsertStridedSliceOp insertOp) {
+          auto transposeOp =
+              insertOp.getValueToStore().getDefiningOp<vector::TransposeOp>();
+          return !transposeOp || !isMalformedArrayLengthTranspose(transposeOp);
         });
 
     target.addDynamicallyLegalOp<vector::MultiDimReductionOp>(
