@@ -477,6 +477,30 @@ func.func @cast_to_static_zero_elems(%arg: memref<?xf32, #spirv.storage_class<Cr
 
 // -----
 
+// Check memref.view
+
+module attributes {
+  spirv.target_env = #spirv.target_env<
+    #spirv.vce<v1.0,
+      [
+        Kernel, Addresses, GenericPointer, Int8, Int64, StorageBuffer8BitAccess, Shader], [SPV_KHR_8bit_storage]>, #spirv.resource_limits<>>
+} {
+
+// CHECK-LABEL: func @memory_view
+//  CHECK-SAME: (%[[ARG0:.+]]: memref<2048xi8, #spirv.storage_class<Function>>)
+func.func @memory_view(%arg0: memref<2048xi8, #spirv.storage_class<Function>>)
+  -> memref<512xf32, #spirv.storage_class<Function>> {
+// CHECK-DAG: %[[ARG0_CAST:.+]] = builtin.unrealized_conversion_cast %[[ARG0]] : memref<2048xi8, #spirv.storage_class<Function>> to !spirv.ptr<!spirv.array<2048 x i8>, Function>
+// CHECK: %[[BITCAST:.+]] = spirv.Bitcast %[[ARG0_CAST]] : !spirv.ptr<!spirv.array<2048 x i8>, Function> to !spirv.ptr<!spirv.array<512 x f32>, Function>
+  %c0 = arith.constant 0: index
+  %view = memref.view %arg0[%c0][] : memref<2048xi8, #spirv.storage_class<Function>> to memref<512xf32, #spirv.storage_class<Function>>
+  return %view : memref<512xf32, #spirv.storage_class<Function>>
+}
+
+}
+
+// -----
+
 module attributes {
   spirv.target_env = #spirv.target_env<#spirv.vce<v1.5, [Kernel, Int64, Addresses, PhysicalStorageBufferAddresses], []>, #spirv.resource_limits<>>
 } {

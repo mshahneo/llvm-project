@@ -26,6 +26,9 @@ std::unique_ptr<Pass> createLowerVectorMultiReductionPass(
     VectorMultiReductionLowering option =
         VectorMultiReductionLowering::InnerParallel);
 
+/// Creates an instance of the chained multi_reduction to tree reduction pass.
+std::unique_ptr<Pass> createVectorMultiReductionToTreeReductionPass();
+
 //===----------------------------------------------------------------------===//
 // Registration
 //===----------------------------------------------------------------------===//

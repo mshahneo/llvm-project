@@ -38,6 +38,7 @@ add_mlir_dialect_library(MLIRGPUTransforms
   Transforms/MemoryPromotion.cpp
   Transforms/ModuleToBinary.cpp
   Transforms/NVVMAttachTarget.cpp
+  Transforms/OptimizeShuffleReductions.cpp
   Transforms/ParallelLoopMapper.cpp
   Transforms/PromoteShuffleToAMDGPU.cpp
   Transforms/ROCDLAttachTarget.cpp

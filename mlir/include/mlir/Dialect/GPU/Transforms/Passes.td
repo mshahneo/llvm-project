@@ -309,4 +309,14 @@ def GpuXeVMAttachTarget : Pass<"xevm-attach-target", ""> {
               /*default=*/[{""}],
               "Command line options passed to downstream compiler">];
 }
+
+def GpuOptimizeShuffleReductionsPass : Pass<"optimize-shuffle-reductions", ""> {
+  let summary = "Optimize shuffle-based reductions into SPIRV group intrinsics";
+  let description = [{
+    This pass optimizes shuffle-based reduction patterns by converting them
+    into more efficient SPIRV subgroup intrinsics when possible.
+  }];
+  let dependentDialects = ["mlir::gpu::GPUDialect"];
+}
+
 #endif // MLIR_DIALECT_GPU_PASSES

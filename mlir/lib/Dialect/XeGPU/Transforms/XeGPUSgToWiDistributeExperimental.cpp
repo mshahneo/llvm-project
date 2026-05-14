@@ -21,6 +21,7 @@
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/IRMapping.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/Value.h"
@@ -1639,6 +1640,46 @@ void XeGPUSgToWiDistributeExperimentalPass::runOnOperation() {
       }
     });
   }
+
+  // Experiment (disabled): post-pass to duplicate vector.extract_strided_slice
+  // and vector.shape_cast chains that feed into xegpu.dpas operands. The
+  // motivation was to replicate the per-dpas operand clones the old
+  // XeGPUSubgroupDistribute pass produced as a side-effect of warp-based
+  // distribution, so IGC's register allocator could place operands in
+  // distinct banks and avoid BC=2 conflicts on the XMX pipeline.
+  //
+  // Conclusion (see /home/gta/test/issue_1636/findings.md): this does not
+  // help because the downstream `canonicalize` + `CSE` in the pipeline
+  // immediately merges the clones back into a single SSA value. By the time
+  // IGC sees the IR, the old-pass output and new-pass output have identical
+  // op counts; the remaining asm-level differences (BC=2 distribution,
+  // sync.nop count, RA choices) come from constant/SSA ordering, not from
+  // op multiplicity. Left here as commented-out reference code.
+  //
+  // {
+  //   OpBuilder b(root);
+  //   root->walk([&](xegpu::DpasOp dpas) {
+  //     for (unsigned operandIdx = 0; operandIdx < dpas->getNumOperands();
+  //          ++operandIdx) {
+  //       Value operand = dpas->getOperand(operandIdx);
+  //       auto castOp = operand.getDefiningOp<vector::ShapeCastOp>();
+  //       if (!castOp || !castOp->hasOneUse())
+  //         continue;
+  //       auto sliceOp =
+  //           castOp.getSource().getDefiningOp<vector::ExtractStridedSliceOp>();
+  //       if (!sliceOp || sliceOp->hasOneUse())
+  //         continue;
+  //       // Clone just before the dpas, so the extract and the shape_cast
+  //       // that feeds this dpas get their own SSA values.
+  //       b.setInsertionPoint(dpas);
+  //       Operation *clonedSlice = b.clone(*sliceOp.getOperation());
+  //       IRMapping mapping;
+  //       mapping.map(sliceOp.getResult(), clonedSlice->getResult(0));
+  //       Operation *clonedCast = b.clone(*castOp.getOperation(), mapping);
+  //       dpas->setOperand(operandIdx, clonedCast->getResult(0));
+  //     }
+  //   });
+  // }
 
   xegpu::removeTemporaryLayoutAttrs(getOperation());
 }

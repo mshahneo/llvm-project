@@ -21,6 +21,7 @@ add_mlir_dialect_library(MLIRVectorTransforms
   VectorEmulateNarrowType.cpp
   VectorInsertExtractStridedSliceRewritePatterns.cpp
   VectorLinearize.cpp
+  VectorMultiReductionToTreeReduction.cpp
   VectorTransferOpTransforms.cpp
   VectorTransferSplitRewritePatterns.cpp
   VectorTransforms.cpp

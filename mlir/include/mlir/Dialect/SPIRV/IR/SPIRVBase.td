@@ -4300,7 +4300,20 @@ def SPIRV_Float8E5M2EXT : TypeAlias<F8E5M2, "Float8E5M2">;
 def SPIRV_Float : FloatOfWidths<[16, 32, 64]>;
 def SPIRV_Float16or32 : FloatOfWidths<[16, 32]>;
 def SPIRV_AnyFloat : AnyTypeOf<[SPIRV_Float, SPIRV_BFloat16KHR, SPIRV_Float8E4M3EXT, SPIRV_Float8E5M2EXT]>;
-def SPIRV_Vector : VectorOfRankAndLengthAndType<[1], [2, 3, 4, 8, 16],
+// Vector type is quite restrictive in SPIR-V.
+// It only allows length of 2, 3, and 4 by default and
+// additionally 8, and 16 via vector16 capability.
+// However, Intel SPIR-V extension removes this restriction
+// via VectorAnyINTEL capability (SPV_INTEL_vector_compute extension).
+// It allows vector length of 2 to 2^32-1.
+//
+// NOTE: VectorOfRankAndLengthAndType uses a list of exact lengths, not ranges.
+// The format is [length1, length2, ...] where each value is checked for equality.
+// To support VectorAnyINTEL without implementing range-based constraints,
+// we list common power-of-2 sizes that cover typical use cases.
+// Verification in SPIRVDialect.cpp and SPIRVTypes.cpp enforces the full [2, 2^32-1] range.
+def SPIRV_Vector : VectorOfRankAndLengthAndType<[1],
+                                       [2, 3, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096],
                                        [SPIRV_Bool, SPIRV_Integer, SPIRV_AnyFloat]>;
 // Component type check is done in the type parser for the following SPIR-V
 // dialect-specific types so we use "Any" here.
@@ -4357,7 +4370,9 @@ class SPIRV_MatrixOfType<list<Type> allowedTypes> :
     "Matrix">;
 
 class SPIRV_VectorOf<Type type> :
-    FixedVectorOfRankAndLengthAndType<[1], [2, 3, 4, 8, 16], [type]>;
+    FixedVectorOfRankAndLengthAndType<[1],
+                                      [2, 3, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096],
+                                      [type]>;
 
 class SPIRV_ScalarOrVectorOf<Type type> :
     AnyTypeOf<[type, SPIRV_VectorOf<type>]>;

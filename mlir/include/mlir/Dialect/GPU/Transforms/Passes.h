@@ -117,6 +117,10 @@ void populateGpuEliminateBarriersPatterns(RewritePatternSet &patterns);
 void populateGpuPromoteShuffleToAMDGPUPatterns(
     RewritePatternSet &patterns, std::optional<amdgpu::Chipset> maybeChipset);
 
+/// Create a pass that optimizes shuffle-based reductions into SPIRV group
+/// intrinsics.
+std::unique_ptr<Pass> createOptimizeShuffleReductionsPass();
+
 /// Generate the code for registering passes.
 #define GEN_PASS_REGISTRATION
 #include "mlir/Dialect/GPU/Transforms/Passes.h.inc"
