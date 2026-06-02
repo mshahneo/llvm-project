@@ -623,16 +623,29 @@ struct SgToWiMultiDimReduction
             op, "only unit leading dimensions are supported for "
                 "multi_reduction with rank > 2");
     }
+    // The number of lanes the reduced dimension is distributed across (the
+    // cross-lane butterfly width). When the source is coalesced
+    // (`lane_data[reductionDim] = D > 1`) each lane owns `D` contiguous
+    // elements of the reduced dim, so the butterfly only spans
+    // `reductionExtent / D = lane_layout[reductionDim]` lanes — not the full
+    // extent. The leading per-lane `vector.reduction` folds the `D` elements
+    // first. Computed from the distributed source shape (exact: distribution
+    // guarantees the extent divides evenly). With `D = 1` this equals the
+    // reduced extent, preserving prior behavior.
+    auto crossLaneCount = [&](int64_t reductionDim) -> int64_t {
+      int64_t origExtent = op.getSourceVectorType().getShape()[reductionDim];
+      int64_t distExtent =
+          cast<VectorType>(adaptor.getSource().getType()).getShape()[reductionDim];
+      return distExtent ? origExtent / distExtent : origExtent;
+    };
     // Handle scalar result: full reduction of a distributed vector to a
     // scalar. First do a local vector reduction, then cross-lane shuffles.
     if (op.getType().isIntOrFloat()) {
       auto reductionDim = reductionDims[0];
-      VectorType origSourceType = op.getSourceVectorType();
-      int64_t reductionDimSize = origSourceType.getShape()[reductionDim];
       // Local reduction to scalar, then cross-lane butterfly shuffles.
       result =
           xegpu::subgroupReduction(op.getLoc(), rewriter, adaptor.getSource(),
-                                   op.getKind(), reductionDimSize);
+                                   op.getKind(), crossLaneCount(reductionDim));
       // Combine with accumulator if present.
       if (adaptor.getAcc())
         result = vector::makeArithReduction(rewriter, op.getLoc(), op.getKind(),
@@ -648,12 +661,10 @@ struct SgToWiMultiDimReduction
           reductionDim, op.getLoc(), rewriter);
     } else {
       auto reductionDim = reductionDims[0];
-      VectorType sourceType = op.getSourceVectorType();
-      int64_t reductionDimSize = sourceType.getShape()[reductionDim];
       result = xegpu::lowerCrossLaneReductionToShuffles(
           cast<TypedValue<VectorType>>(adaptor.getSource()),
           cast<TypedValue<VectorType>>(adaptor.getAcc()), op.getKind(),
-          reductionDim, reductionDimSize, op.getLoc(), rewriter);
+          reductionDim, crossLaneCount(reductionDim), op.getLoc(), rewriter);
     }
     rewriter.replaceOp(op, result);
     return success();
