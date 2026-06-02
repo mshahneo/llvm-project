@@ -36,20 +36,22 @@ gpu.module @kernel_chain {
 }
 
 // -----
-// Conflict path: the load's offsets are contiguous on a vector<2x32> (inner
-// 32 > subgroup_size 16, so it would coalesce in isolation), but its only
-// consumer is a multi_reduction over the inner dim, which requires
-// lane_data = [1, 1] on the source. The reduction overrides the hint: the
-// load settles at lane_data = [1, 1], the reduction's source layout matches,
-// and no xegpu.convert_layout is created.
-// CHECK-LABEL: gpu.func @reduction_blocks_coalesce(
+// Coalesced-reduction path: the load's offsets are contiguous on a
+// vector<2x32> (inner 32 > subgroup_size 16). Its consumer is an
+// associative-commutative multi_reduction over the inner dim. Because the
+// reduction kind is AC, the reduction accepts the coalesce factor on its
+// source FCD: the load settles at lane_data = [1, 2] (each lane owns 2
+// contiguous elements), the reduction's source layout matches, and no
+// xegpu.convert_layout is created. The downstream SgToWi reduction lowering
+// folds the 2 per-lane elements before the cross-lane butterfly.
+// CHECK-LABEL: gpu.func @reduction_coalesces(
 // CHECK: xegpu.load
-// CHECK-SAME: layout = #xegpu.layout<lane_layout = [1, 16], lane_data = [1, 1]>
+// CHECK-SAME: layout = #xegpu.layout<lane_layout = [1, 16], lane_data = [1, 2]>
 // CHECK: vector.multi_reduction
-// CHECK-SAME: #xegpu.slice<#xegpu.layout<lane_layout = [1, 16], lane_data = [1, 1]>, dims = [1]>
+// CHECK-SAME: #xegpu.slice<#xegpu.layout<lane_layout = [1, 16], lane_data = [1, 2]>, dims = [1]>
 // CHECK-NOT: xegpu.convert_layout
 gpu.module @kernel_reduction {
-  gpu.func @reduction_blocks_coalesce(%src: i64, %dst: i64, %acc: vector<2xf32>) {
+  gpu.func @reduction_coalesces(%src: i64, %dst: i64, %acc: vector<2xf32>) {
     %step = vector.step : vector<64xindex>
     %off2d = vector.shape_cast %step : vector<64xindex> to vector<2x32xindex>
     %mask = arith.constant dense<true> : vector<2x32xi1>

@@ -837,7 +837,7 @@ xegpu::DistributeLayoutAttr xegpu::inferMaskOffsetLayoutForScatterIO(
 xegpu::SliceAttr xegpu::setupMultiReductionResultLayout(
     xegpu::LayoutKind layoutKind, VectorType srcVecTy,
     DistributeLayoutAttr consumerLayout, SmallVector<int64_t> reductionDims,
-    int numSg, const xegpu::uArch::uArch *uArch) {
+    int numSg, const xegpu::uArch::uArch *uArch, int coalesceFactor) {
 
   auto srcShape = srcVecTy.getShape();
   int srcRank = srcShape.size();
@@ -850,6 +850,13 @@ xegpu::SliceAttr xegpu::setupMultiReductionResultLayout(
   };
 
   const int subgroupSize = uArch->getSubgroupSize();
+  // Coalescing only applies when the (single) reduction dim is the FCD and
+  // the factor cleanly partitions the reduced extent across the lanes.
+  int fcd = srcRank - 1;
+  int coalesce = std::max(1, coalesceFactor);
+  bool coalesceFcd = coalesce > 1 && reductionDims.size() == 1 &&
+                     reductionDims[0] == fcd &&
+                     srcShape[fcd] % (subgroupSize * coalesce) == 0;
   int64_t maxReduceVectorSize = 1; // could extend to spirv vector Size
   xegpu::DistributeLayoutAttr srcLayout;
   if (layoutKind == xegpu::LayoutKind::Subgroup) {
@@ -926,6 +933,12 @@ xegpu::SliceAttr xegpu::setupMultiReductionResultLayout(
           std::min(maxReduceVectorSize, srcShape[srcRank - 2]);
     instData[srcRank - 1] =
         std::min(static_cast<int64_t>(subgroupSize), srcShape[srcRank - 1]);
+    // Coalesced FCD reduction: grow inst_data on the FCD to
+    // lane_layout * lane_data = subgroupSize * factor so blocking keeps the
+    // reduced run in one instruction tile (rather than splitting into
+    // `factor` separate subgroupSize-wide blocks).
+    if (coalesceFcd)
+      instData[fcd] = subgroupSize * coalesce;
     srcLayout = xegpu::LayoutAttr::get(context, toInt32Attr(instData));
   } else if (layoutKind == xegpu::LayoutKind::Lane) {
 
@@ -935,6 +948,13 @@ xegpu::SliceAttr xegpu::setupMultiReductionResultLayout(
     if (srcRank >= 2)
       laneData[srcRank - 2] =
           std::min(maxReduceVectorSize, srcShape[srcRank - 2]);
+    // Coalesced FCD reduction: each lane owns `factor` contiguous elements of
+    // the reduced dim. lane_layout[FCD] shrinks to subgroupSize and
+    // lane_data[FCD] becomes the factor (lane_layout * lane_data partitions
+    // the reduced extent). The downstream SgToWi reduction lowering folds the
+    // `factor` elements per lane before the cross-lane butterfly.
+    if (coalesceFcd)
+      laneData[fcd] = coalesce;
     srcLayout = xegpu::LayoutAttr::get(context, toInt32Attr(laneLayout),
                                        toInt32Attr(laneData));
   }
