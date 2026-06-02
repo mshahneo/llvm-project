@@ -1309,8 +1309,15 @@ setupGenericStoreAnchorLayout(xegpu::LayoutKind layoutKind,
   if (!isChunkedStore) {
     int64_t inner = srcShape.back();
     if (layoutKind == xegpu::LayoutKind::InstData) {
-      instData[srcShapeSize - 1] =
-          std::min(subgroupSize, static_cast<int>(inner));
+      // Coalescing sink: grow inst_data[FCD] to subgroupSize * factor (capped
+      // by the inner extent and only when it divides evenly) so XeGPUBlocking
+      // keeps the coalesced run in one instruction tile. factor == 1
+      // reproduces the default `min(subgroupSize, inner)`.
+      int factor = std::max(1, coalesceFactor);
+      int instInner = subgroupSize * factor;
+      if (factor == 1 || inner % instInner != 0)
+        instInner = std::min(subgroupSize, static_cast<int>(inner));
+      instData[srcShapeSize - 1] = instInner;
       return xegpu::LayoutAttr::get(context, instData);
     } else if (layoutKind == xegpu::LayoutKind::Lane) {
       // Coalescing sink: seed lane_data[FCD] = coalesceFactor (capped so
