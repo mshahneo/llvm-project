@@ -501,9 +501,27 @@ struct SgToWiLoadGather : public OpConversionPattern<xegpu::LoadGatherOp> {
         castValueTo(rewriter, cast<TypedValue<VectorType>>(distMask), maskTy1D);
 
     Value distSource = adaptor.getSource();
+
+    // Coalesced case: the layout assigns `lane_data[FCD] = N > 1` (with
+    // chunk_size == 1), i.e. each lane owns N contiguous elements. lane_data
+    // is contiguous-per-lane by definition, so this is exactly a chunked
+    // access. The XeVM lowering only accepts the chunked form (scalar base
+    // offset + scalar mask + chunk_size = N + value vector<N>), so translate
+    // here: take element 0 of the per-lane offsets/mask as the base and set
+    // chunk_size = N.
+    int64_t laneElems = distResultTy1D.getNumElements();
+    IntegerAttr chunkSizeAttr = op.getChunkSizeAttr();
+    if (chunkSize == 1 && laneElems > 1) {
+      distOffsets = vector::ExtractOp::create(rewriter, op.getLoc(), distOffsets,
+                                              ArrayRef<int64_t>{0});
+      distMask = vector::ExtractOp::create(rewriter, op.getLoc(), distMask,
+                                           ArrayRef<int64_t>{0});
+      chunkSizeAttr = rewriter.getI64IntegerAttr(laneElems);
+    }
+
     auto newOp = xegpu::LoadGatherOp::create(
         rewriter, op.getLoc(), distResultTy1D, distSource, distOffsets,
-        distMask, op.getChunkSizeAttr(), op.getL1HintAttr(), op.getL2HintAttr(),
+        distMask, chunkSizeAttr, op.getL1HintAttr(), op.getL2HintAttr(),
         op.getL3HintAttr(), /*layout=*/nullptr);
 
     Value result = newOp->getResult(0);
@@ -1030,8 +1048,23 @@ struct SgToWiStoreScatter : public OpConversionPattern<xegpu::StoreScatterOp> {
         castValueTo(rewriter, cast<TypedValue<VectorType>>(distMask), maskTy1D);
 
     Value distDest = adaptor.getDest();
+
+    // Coalesced case (mirror of SgToWiLoadGather): `lane_data[FCD] = N > 1`
+    // with chunk_size == 1 means each lane stores N contiguous elements.
+    // Translate to the chunked form the XeVM lowering accepts: scalar base
+    // offset + scalar mask + chunk_size = N + value vector<N>.
+    int64_t laneElems = distValueTy1D.getNumElements();
+    IntegerAttr chunkSizeAttr = op.getChunkSizeAttr();
+    if (chunkSize == 1 && laneElems > 1) {
+      distOffsets = vector::ExtractOp::create(rewriter, op.getLoc(), distOffsets,
+                                              ArrayRef<int64_t>{0});
+      distMask = vector::ExtractOp::create(rewriter, op.getLoc(), distMask,
+                                           ArrayRef<int64_t>{0});
+      chunkSizeAttr = rewriter.getI64IntegerAttr(laneElems);
+    }
+
     xegpu::StoreScatterOp::create(rewriter, op.getLoc(), distValue, distDest,
-                                  distOffsets, distMask, op.getChunkSizeAttr(),
+                                  distOffsets, distMask, chunkSizeAttr,
                                   op.getL1HintAttr(), op.getL2HintAttr(),
                                   op.getL3HintAttr(), /*layout=*/nullptr);
     rewriter.eraseOp(op);
