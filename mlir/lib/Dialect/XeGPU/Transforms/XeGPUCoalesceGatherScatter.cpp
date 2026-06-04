@@ -1018,21 +1018,30 @@ static Value skipLayoutNeutral(Value v) {
   return v;
 }
 
+/// True if `red` reduces (only) the fastest-changing dim of its source.
+static bool reducesFcd(vector::MultiDimReductionOp red) {
+  auto dims = red.getReductionDims();
+  if (dims.size() != 1)
+    return false;
+  int64_t fcd = red.getSourceVectorType().getRank() - 1;
+  return dims[0] == fcd;
+}
+
 /// True when `op` (a gather load or scatter store) is tied to a
-/// `vector.multi_reduction`: a load whose result feeds a reduction, or a
-/// store whose stored value comes from one (through layout-neutral glue).
+/// `vector.multi_reduction` whose coalescing does NOT lower end-to-end and so
+/// must be gated out of the analysis.
 ///
-/// Coalescing such an access does not lower end-to-end today:
 ///  - Non-FCD reduction (e.g. reduction_2D_1D): the surviving-FCD coalesce
 ///    factor is not carried onto the reduction result/store layout
 ///    (setupMultiReductionResultLayout only coalesces FCD reductions), so a
 ///    coalesced load (lane_data[FCD]=N) forces an unlowerable
-///    convert_layout lane_data=[1]<->[N].
-///  - FCD reduction (e.g. reduction_4D_3D): XeGPUBlocking decomposes the
-///    reduction round-robin (extract_strided_slice into subgroupSize-wide
-///    rounds) before lane coalescing applies, so a coalesced (contiguous)
-///    load conflicts with the round-robin slices via an unlowerable
-///    convert_layout lane_data=[N]<->[1].
+///    convert_layout lane_data=[1]<->[N]. GATED.
+///  - FCD reduction (e.g. reduction_4D_3D): supported — the reduction's
+///    source-operand layout adopts the coalesced producer's FCD value (see
+///    inferSourceLayoutFromResultForNonAnchorOp), so XeGPUBlocking keeps the
+///    contiguous run and the SgToLane reduction folds the per-lane chunk
+///    before the cross-lane butterfly. NOT gated.
+///
 /// See /home/gta/test/issue_1303/coalesce_journey.md for the full analysis.
 /// Pure elementwise gather/scatter coalescing (no reduction) is unaffected.
 template <typename OpTy>
@@ -1040,12 +1049,14 @@ static bool isReductionTied(OpTy op) {
   if constexpr (std::is_same_v<OpTy, xegpu::StoreScatterOp>) {
     // Walk the stored value's backward slice. A coalescing store seeds
     // lane_data[FCD] = factor that flows backward to its value producers; if
-    // any producer is a multi_reduction, that factor lands on the reduction
-    // result (which the reduction lowering keeps at lane_data = 1), forcing an
-    // unlowerable convert. The reassembly between reduction and store is
-    // typically convert_layout / shape_cast / insert(_strided_slice) /
-    // elementwise arith (e.g. a mean's divf, or accumulator add), so traverse
-    // those. Bounded BFS to stay cheap and avoid cycles.
+    // any producer is a non-FCD multi_reduction, that factor lands on the
+    // reduction result (which the reduction lowering keeps at lane_data = 1),
+    // forcing an unlowerable convert. The reassembly between reduction and
+    // store is typically convert_layout / shape_cast / insert(_strided_slice)
+    // / elementwise arith (e.g. a mean's divf, or accumulator add), so
+    // traverse those. Bounded BFS to stay cheap and avoid cycles. An FCD
+    // reduction is allowed (its result has a unit FCD, so the store is not a
+    // coalescing candidate anyway).
     SmallVector<Value, 8> worklist{op.getValue()};
     llvm::SmallPtrSet<Operation *, 16> seen;
     unsigned steps = 0;
@@ -1054,8 +1065,11 @@ static bool isReductionTied(OpTy op) {
       Operation *def = v.getDefiningOp();
       if (!def || !seen.insert(def).second)
         continue;
-      if (isa<vector::MultiDimReductionOp>(def))
-        return true;
+      if (auto red = dyn_cast<vector::MultiDimReductionOp>(def)) {
+        if (!reducesFcd(red))
+          return true;
+        continue;
+      }
       if (isa<vector::ShapeCastOp, vector::BitCastOp, xegpu::ConvertLayoutOp,
               vector::InsertOp, vector::InsertStridedSliceOp>(def) ||
           OpTrait::hasElementwiseMappableTraits(def))
@@ -1073,8 +1087,11 @@ static bool isReductionTied(OpTy op) {
           break;
         u = *u->getResult(0).getUsers().begin();
       }
-      if (u && isa<vector::MultiDimReductionOp>(u))
-        return true;
+      // A load feeding an FCD reduction is supported (Option A); only a load
+      // feeding a NON-FCD reduction must be gated.
+      if (auto red = dyn_cast_if_present<vector::MultiDimReductionOp>(u))
+        if (!reducesFcd(red))
+          return true;
     }
     return false;
   }

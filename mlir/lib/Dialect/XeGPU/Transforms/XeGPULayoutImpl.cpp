@@ -1873,7 +1873,44 @@ xegpu::DistributeLayoutAttr xegpu::inferSourceLayoutFromResultForNonAnchorOp(
   if (auto reduction = dyn_cast<vector::MultiDimReductionOp>(op)) {
     if (idx == 0) {
       SmallVector<int64_t> reductionDims(reduction.getReductionDims());
-      return xegpu::inferMultiReductionSourceLayout(resLayout, reductionDims);
+      xegpu::DistributeLayoutAttr srcLayout =
+          xegpu::inferMultiReductionSourceLayout(resLayout, reductionDims);
+      // Coalesced FCD reduction: the result layout (reduced dim removed) does
+      // not carry the coalesce factor, so re-deriving the source from it drops
+      // it — yielding lane_data/inst_data = 1 on the reduced FCD and a
+      // disagreement with the already-coalesced producer (an unlowerable
+      // convert, and a round-robin tiling by XeGPUBlocking). The producer's
+      // permanent layout (e.g. a coalesced xegpu.load with inst_data[FCD] =
+      // subgroupSize*factor or lane_data[FCD] = factor) is the source of truth
+      // here and survives the temporary-layout wipe, so adopt its FCD value
+      // when it exceeds the result-derived one. This keeps the contiguous
+      // per-lane chunk through blocking; the SgToLane reduction lowering then
+      // folds the `factor` per-lane elements before the cross-lane butterfly.
+      if (srcLayout && reductionDims.size() == 1) {
+        int rank = srcLayout.getRank();
+        int fcd = rank - 1;
+        if (reductionDims[0] == fcd) {
+          if (auto prod = xegpu::getDistributeLayoutAttr(operand.get())) {
+            SmallVector<int64_t> prodInst = prod.getEffectiveInstDataAsInt();
+            SmallVector<int64_t> prodLane = prod.getEffectiveLaneDataAsInt();
+            SmallVector<int64_t> srcInst = srcLayout.getEffectiveInstDataAsInt();
+            SmallVector<int64_t> srcLane = srcLayout.getEffectiveLaneDataAsInt();
+            bool isLane = !srcLayout.getEffectiveLaneLayoutAsInt().empty();
+            if (isLane && fcd < (int)srcLane.size() &&
+                fcd < (int)prodLane.size() && prodLane[fcd] > srcLane[fcd])
+              srcLayout = srcLayout.setDimData(fcd, /*sgData=*/-1,
+                                               /*instData=*/-1,
+                                               /*laneData=*/prodLane[fcd]);
+            else if (!isLane && fcd < (int)srcInst.size() &&
+                     fcd < (int)prodInst.size() &&
+                     prodInst[fcd] > srcInst[fcd])
+              srcLayout = srcLayout.setDimData(fcd, /*sgData=*/-1,
+                                               /*instData=*/prodInst[fcd],
+                                               /*laneData=*/-1);
+          }
+        }
+      }
+      return srcLayout;
     }
     if (idx == 1)
       return resLayout;
