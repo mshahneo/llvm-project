@@ -36,20 +36,18 @@ gpu.module @kernel_chain {
 }
 
 // -----
-// Coalesced-reduction path: the load's offsets are contiguous on a
-// vector<2x32> (inner 32 > subgroup_size 16). Its consumer is an
-// associative-commutative multi_reduction over the inner dim. Because the
-// reduction kind is AC, the reduction requests the coalesce factor on its
-// SOURCE FCD: the load settles at lane_data = [1, 2] (each lane owns 2
-// contiguous elements). The reduction RESULT, however, lives on the
-// post-reduction layout with lane_data = [1, 1] (the factor only applies to
-// the source the lane folds locally), so the result/accumulator match the
-// real consumer and no xegpu.convert_layout is created. The downstream SgToWi
-// reduction lowering folds the 2 per-lane elements before the cross-lane
-// butterfly.
+// Reduction-tied access: the load's offsets are contiguous on a vector<2x32>
+// (inner 32 > subgroup_size 16) and its consumer is an associative-commutative
+// multi_reduction over the inner dim. Coalescing such a load is NOT applied:
+// the coalesce analysis gates out gather/scatter ops tied to a
+// multi_reduction because the reduction-coalescing layout path does not lower
+// end-to-end (a non-FCD reduction can't carry the surviving-FCD factor onto
+// its result/store; an FCD reduction is decomposed round-robin by
+// XeGPUBlocking before lane coalescing applies). So the load settles at the
+// default lane_data = [1, 1] and no coalesced layout is requested.
 // CHECK-LABEL: gpu.func @reduction_coalesces(
 // CHECK: xegpu.load
-// CHECK-SAME: layout = #xegpu.layout<lane_layout = [1, 16], lane_data = [1, 2]>
+// CHECK-SAME: layout = #xegpu.layout<lane_layout = [1, 16], lane_data = [1, 1]>
 // CHECK: vector.multi_reduction
 // CHECK-SAME: #xegpu.slice<#xegpu.layout<lane_layout = [1, 16], lane_data = [1, 1]>, dims = [1]>
 // CHECK-NOT: xegpu.convert_layout

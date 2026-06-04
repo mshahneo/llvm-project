@@ -1004,6 +1004,82 @@ static bool isCandidateForCoalesce(OpTy op) {
   return true;
 }
 
+/// Walk past layout-neutral, single-result reshape / shape-preserving glue
+/// (vector.shape_cast / vector.bitcast / xegpu.convert_layout) to the value
+/// actually produced/consumed. Used to detect a reduction on the other side
+/// of such glue ops.
+static Value skipLayoutNeutral(Value v) {
+  while (Operation *def = v.getDefiningOp()) {
+    if (isa<vector::ShapeCastOp, vector::BitCastOp, xegpu::ConvertLayoutOp>(def))
+      v = def->getOperand(0);
+    else
+      break;
+  }
+  return v;
+}
+
+/// True when `op` (a gather load or scatter store) is tied to a
+/// `vector.multi_reduction`: a load whose result feeds a reduction, or a
+/// store whose stored value comes from one (through layout-neutral glue).
+///
+/// Coalescing such an access does not lower end-to-end today:
+///  - Non-FCD reduction (e.g. reduction_2D_1D): the surviving-FCD coalesce
+///    factor is not carried onto the reduction result/store layout
+///    (setupMultiReductionResultLayout only coalesces FCD reductions), so a
+///    coalesced load (lane_data[FCD]=N) forces an unlowerable
+///    convert_layout lane_data=[1]<->[N].
+///  - FCD reduction (e.g. reduction_4D_3D): XeGPUBlocking decomposes the
+///    reduction round-robin (extract_strided_slice into subgroupSize-wide
+///    rounds) before lane coalescing applies, so a coalesced (contiguous)
+///    load conflicts with the round-robin slices via an unlowerable
+///    convert_layout lane_data=[N]<->[1].
+/// See /home/gta/test/issue_1303/coalesce_journey.md for the full analysis.
+/// Pure elementwise gather/scatter coalescing (no reduction) is unaffected.
+template <typename OpTy>
+static bool isReductionTied(OpTy op) {
+  if constexpr (std::is_same_v<OpTy, xegpu::StoreScatterOp>) {
+    // Walk the stored value's backward slice. A coalescing store seeds
+    // lane_data[FCD] = factor that flows backward to its value producers; if
+    // any producer is a multi_reduction, that factor lands on the reduction
+    // result (which the reduction lowering keeps at lane_data = 1), forcing an
+    // unlowerable convert. The reassembly between reduction and store is
+    // typically convert_layout / shape_cast / insert(_strided_slice) /
+    // elementwise arith (e.g. a mean's divf, or accumulator add), so traverse
+    // those. Bounded BFS to stay cheap and avoid cycles.
+    SmallVector<Value, 8> worklist{op.getValue()};
+    llvm::SmallPtrSet<Operation *, 16> seen;
+    unsigned steps = 0;
+    while (!worklist.empty() && steps++ < 64) {
+      Value v = worklist.pop_back_val();
+      Operation *def = v.getDefiningOp();
+      if (!def || !seen.insert(def).second)
+        continue;
+      if (isa<vector::MultiDimReductionOp>(def))
+        return true;
+      if (isa<vector::ShapeCastOp, vector::BitCastOp, xegpu::ConvertLayoutOp,
+              vector::InsertOp, vector::InsertStridedSliceOp>(def) ||
+          OpTrait::hasElementwiseMappableTraits(def))
+        for (Value operand : def->getOperands())
+          if (isa<VectorType>(operand.getType()))
+            worklist.push_back(operand);
+    }
+    return false;
+  } else {
+    for (Operation *user : op->getUsers()) {
+      Operation *u = user;
+      while (u && isa<vector::ShapeCastOp, vector::BitCastOp,
+                      xegpu::ConvertLayoutOp>(u)) {
+        if (u->getNumResults() != 1 || u->getResult(0).use_empty())
+          break;
+        u = *u->getResult(0).getUsers().begin();
+      }
+      if (u && isa<vector::MultiDimReductionOp>(u))
+        return true;
+    }
+    return false;
+  }
+}
+
 /// Run the analysis on a single op. If the offsets analyze as `Chunked`,
 /// stamp a `xegpu.coalesce_hint` attribute carrying the FCD lane_data
 /// factor.
@@ -1011,6 +1087,10 @@ template <typename OpTy>
 static void analyzeAndStampHint(OpTy op, DataFlowSolver &solver,
                                 unsigned maxChunkSize) {
   if (!isCandidateForCoalesce(op))
+    return;
+  // Do not coalesce accesses tied to a reduction: the reduction-coalescing
+  // layout path does not lower end-to-end yet (see isReductionTied).
+  if (isReductionTied(op))
     return;
   auto offsetsTy = cast<VectorType>(op.getOffsets().getType());
   unsigned subgroupSize = lookupSubgroupSize(op);
