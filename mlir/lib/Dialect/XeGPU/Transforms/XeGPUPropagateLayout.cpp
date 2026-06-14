@@ -1392,6 +1392,15 @@ ResolveLayoutConflicts::resolveTensorDescConsumer(OpOperand &operand) {
   // A conflict exists in tensor descriptor operand if tensor descriptor's
   // layout is different from the anchor layout expected by the consumer.
   if (expectedLayout && currLayout && expectedLayout != currLayout) {
+    // Skip if encoding is BlockTensorDescAttr with array_length > 1
+    // The layout is already correctly embedded in the descriptor
+    if (auto blockAttr = dyn_cast_if_present<xegpu::BlockTensorDescAttr>(
+            currTDescType.getEncoding())) {
+      if (blockAttr.getArrayLength().getInt() > 1) {
+        return success();  // Don't try to resolve conflict
+      }
+    }
+
     // Try to get the defining CreateNdDescOp of the tensor descriptor.
     auto conflictingCreateNdOp = getDefiningCreateNdDescOp(tdescValue);
     if (!conflictingCreateNdOp) {

@@ -480,8 +480,14 @@ struct LoadNdDistribution final : public gpu::WarpDistributionPattern {
           loadOp, "the source tensor descriptor lacks layout attribute");
 
     unsigned operandIdx = operand->getOperandNumber();
-    VectorType distributedTypeByWarpOp =
-        cast<VectorType>(warpOp.getResult(operandIdx).getType());
+    // Compute the distributed type for the warp op result based on lane layout.
+    // This should use getDistVecTypeBasedOnLaneLayout like DpasDistribution does.
+    FailureOr<VectorType> distributedTypeByWarpOpOrFailure =
+        getDistVecTypeBasedOnLaneLayout(layout, loadOp.getType());
+    if (failed(distributedTypeByWarpOpOrFailure))
+      return rewriter.notifyMatchFailure(
+          loadOp, "Failed to compute distributed vector type for load result");
+    VectorType distributedTypeByWarpOp = distributedTypeByWarpOpOrFailure.value();
 
     SmallVector<size_t> newRetIndices;
     SmallVector<Value> newYieldedValues = {loadOp.getTensorDesc()};

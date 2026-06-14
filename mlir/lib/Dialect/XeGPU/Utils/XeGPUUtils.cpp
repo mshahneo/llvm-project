@@ -88,7 +88,26 @@ mlir::xegpu::getDistributedVectorType(VectorType originalType,
       shape, originalType.getElementType(), arrayLength,
       /*boundary_check=*/true,
       /*memory_space=*/xegpu::MemorySpace::Global, layout);
-  return xegpu::getDistributedVectorType(helperTdescTy);
+  auto distVecTypeOrFailure = xegpu::getDistributedVectorType(helperTdescTy);
+  if (failed(distVecTypeOrFailure))
+    return failure();
+
+  // If array_length > 1, the distributed type needs to be reshaped from 1D
+  // to 2D with array_length as the first dimension. For example, vector<64xf16>
+  // with array_length=2 should become vector<2x32xf16>.
+  if (arrayLength > 1) {
+    VectorType distVecType = *distVecTypeOrFailure;
+    assert(distVecType.getRank() == 1 &&
+           "Expected 1D distributed vector type for block loads with array_length");
+    int64_t totalElements = distVecType.getNumElements();
+    assert(totalElements % arrayLength == 0 &&
+           "Total elements must be divisible by array_length");
+    int64_t elementsPerArray = totalElements / arrayLength;
+    SmallVector<int64_t> newShape{arrayLength, elementsPerArray};
+    return VectorType::get(newShape, distVecType.getElementType());
+  }
+
+  return distVecTypeOrFailure;
 }
 
 FailureOr<VectorType>

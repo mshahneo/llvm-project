@@ -282,6 +282,15 @@ struct UnrollLoadNdOp : public UnrollPattern<xegpu::LoadNdOp> {
     VectorType valueTy = op.getType();
     xegpu::TensorDescType tdescTy = op.getTensorDescType();
 
+    // Skip unrolling for loads from descriptors with array_length > 1
+    // These are already properly sized by the distribution pass
+    if (auto blockAttr = llvm::dyn_cast_if_present<xegpu::BlockTensorDescAttr>(
+            tdescTy.getEncoding())) {
+      if (blockAttr.getArrayLength().getInt() > 1) {
+        return failure();  // Don't unroll - it's already the right size
+      }
+    }
+
     std::optional<SmallVector<int64_t>> targetShape = getTargetShape(op);
     if (!targetShape)
       return failure();

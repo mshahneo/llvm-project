@@ -44,6 +44,25 @@ resolveUnrealizedConversionCastOp(UnrealizedConversionCastOp castOp) {
   ValueRange inputs = castOp.getInputs();
   ValueRange outputs = castOp.getOutputs();
 
+  // Handle identity casts for TensorDescType where only layout changed
+  // This happens after blocking when inst_data is removed from the layout
+  if (inputs.size() == 1 && outputs.size() == 1) {
+    auto inputTy = dyn_cast<xegpu::TensorDescType>(inputs[0].getType());
+    auto outputTy = dyn_cast<xegpu::TensorDescType>(outputs[0].getType());
+    if (inputTy && outputTy) {
+      // Check if only the layout differs (shape, element type, encoding same)
+      if (inputTy.getShape() == outputTy.getShape() &&
+          inputTy.getElementType() == outputTy.getElementType() &&
+          inputTy.getEncoding() == outputTy.getEncoding()) {
+        // This is an identity cast - just forward the value
+        OpBuilder builder(castOp);
+        castOp->replaceAllUsesWith(inputs);
+        castOp->erase();
+        return;
+      }
+    }
+  }
+
   auto hasIdenticalVectorTypes = [](ValueRange values) {
     auto types = values.getTypes();
     return llvm::all_of(types, [&](Type type) {
@@ -378,6 +397,16 @@ void XeGPUBlockingPass::runOnOperation() {
         op->removeAttr(name);
         if (!isa<LoopLikeOpInterface>(op))
           xegpu::setDistributeLayoutAttr(result, layout.dropInstData());
+      }
+    }
+
+    // Clean up layout attributes on AnchorLayoutInterface ops (load_nd, store_nd, etc.)
+    // These have a "layout" operation attribute that also needs inst_data removed
+    if (auto anchorOp = dyn_cast<xegpu::AnchorLayoutInterface>(op)) {
+      if (auto layout = anchorOp.getAnchorLayout()) {
+        if (!layout.getEffectiveInstDataAsInt().empty()) {
+          anchorOp.setAnchorLayout(layout.dropInstData());
+        }
       }
     }
 
