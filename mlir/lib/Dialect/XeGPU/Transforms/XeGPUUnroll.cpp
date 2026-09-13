@@ -299,6 +299,32 @@ struct UnrollLoadNdOp : public UnrollPattern<xegpu::LoadNdOp> {
     newOps = unrollByTile(op.getMixedOffsets(), tdescTy, *targetShape,
                           createLoad, loc, rewriter);
 
+    // Each sub-load transposes its own tile, so the tile taken from descriptor
+    // position (i, j) holds result position (j, i). `unrollByTile` walks the
+    // descriptor grid, while `unpack` fills the result grid, so reorder the
+    // tiles in between. Without this only the diagonal tiles land correctly.
+    if (std::optional<ArrayRef<int64_t>> transpose = op.getTranspose()) {
+      // The sub-loads reuse `targetShape` for both the descriptor tile and the
+      // loaded value, so the permutation has to leave the tile shape alone.
+      if (transpose->size() != targetShape->size() ||
+          applyPermutation(*targetShape, *transpose) != *targetShape)
+        return rewriter.notifyMatchFailure(
+            op, "transposed load_nd needs a permutation-invariant tile shape");
+      SmallVector<int64_t> descGrid;
+      for (auto [dim, tile] : llvm::zip_equal(tdescTy.getShape(), *targetShape))
+        descGrid.push_back(llvm::divideCeil(dim, tile));
+      SmallVector<int64_t> descStrides = computeStrides(descGrid);
+      SmallVector<int64_t> resStrides =
+          computeStrides(applyPermutation(descGrid, *transpose));
+      SmallVector<Value> reordered(newOps.size());
+      for (auto [pos, val] : llvm::enumerate(newOps)) {
+        SmallVector<int64_t> descIdx = delinearize(pos, descStrides);
+        reordered[linearize(applyPermutation(descIdx, *transpose), resStrides)] =
+            val;
+      }
+      newOps = std::move(reordered);
+    }
+
     Value castOp = unpack(newOps, op.getType(), *targetShape, loc, rewriter);
     rewriter.replaceOp(op, castOp);
     return success();

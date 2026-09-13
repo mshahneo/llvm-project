@@ -176,10 +176,18 @@ struct SgToLaneLoadNd : public OpConversionPattern<xegpu::LoadNdOp> {
         adaptor.getTensorDesc(), op.getMixedOffsets(), op.getPackedAttr(),
         op.getTransposeAttr(), op.getL1HintAttr(), op.getL2HintAttr(),
         op.getL3HintAttr(), /**layout**/ nullptr);
+    // A transposed load already comes back in packed (VNNI) register order:
+    // sub-32-bit elements are transposed at 32-bit granularity, which pairs
+    // up neighbours along the transposed dimension. The hardware cannot do
+    // both, so ask for packed only when there is no transpose.
+    bool transposed =
+        op.getTranspose().has_value() ||
+        xegpu::requireTranspose(cast<xegpu::LayoutAttr>(layout), uArch);
     // Set the packed attribute if the layout requires it.
-    newOp.setPacked(xegpu::requirePacked(cast<xegpu::LayoutAttr>(layout)));
+    newOp.setPacked(!transposed &&
+                    xegpu::requirePacked(cast<xegpu::LayoutAttr>(layout)));
     // Set the transpose attribute if the layout requires it.
-    if (xegpu::requireTranspose(cast<xegpu::LayoutAttr>(layout), uArch))
+    if (transposed)
       newOp.setTranspose(DenseI64ArrayAttr::get(rewriter.getContext(), {1, 0}));
     rewriter.replaceOp(op, castValueTo(rewriter, newOp.getResult(),
                                        expectedLaneResultTyOrFailure.value()));

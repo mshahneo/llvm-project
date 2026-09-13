@@ -836,3 +836,32 @@ gpu.module @test_kernel {
     gpu.return
   }
 }
+
+// -----
+// Each sub-load transposes its own tile, so the tile read at descriptor
+// position (i, j) holds result position (j, i). The tiles must be reordered
+// before they are assembled, or only the diagonal tiles land correctly.
+gpu.module @test_kernel {
+  // CHECK-LABEL: load_nd_transpose_tile_order
+  // CHECK-SAME: %[[ARG0:.*]]: memref<32x32xf16>
+  gpu.func @load_nd_transpose_tile_order(%src: memref<32x32xf16>) -> vector<32x32xf16> {
+    %c0 = arith.constant 0 : index
+    // CHECK: %[[C16:.*]] = arith.constant 16 : index
+    // CHECK: %[[C0:.*]] = arith.constant 0 : index
+    // CHECK: %[[TDESC:.*]] = xegpu.create_nd_tdesc %[[ARG0]] : memref<32x32xf16> -> !xegpu.tensor_desc<16x16xf16>
+    // CHECK: %[[L00:.*]] = xegpu.load_nd %[[TDESC]][%[[C0]], %[[C0]]] <{transpose = array<i64: 1, 0>}>
+    // CHECK: %[[L01:.*]] = xegpu.load_nd %[[TDESC]][%[[C0]], %[[C16]]] <{transpose = array<i64: 1, 0>}>
+    // CHECK: %[[L10:.*]] = xegpu.load_nd %[[TDESC]][%[[C16]], %[[C0]]] <{transpose = array<i64: 1, 0>}>
+    // CHECK: %[[L11:.*]] = xegpu.load_nd %[[TDESC]][%[[C16]], %[[C16]]] <{transpose = array<i64: 1, 0>}>
+    // CHECK: %[[I0:.*]] = vector.insert_strided_slice %[[L00]], %{{.*}} offsets = [0, 0]
+    // CHECK: %[[I1:.*]] = vector.insert_strided_slice %[[L10]], %[[I0]] offsets = [0, 16]
+    // CHECK: %[[I2:.*]] = vector.insert_strided_slice %[[L01]], %[[I1]] offsets = [16, 0]
+    // CHECK: vector.insert_strided_slice %[[L11]], %[[I2]] offsets = [16, 16]
+    %tdesc = xegpu.create_nd_tdesc %src : memref<32x32xf16>
+      -> !xegpu.tensor_desc<32x32xf16, #xegpu.layout<inst_data = [16, 16]>>
+    %load = xegpu.load_nd %tdesc[%c0, %c0]
+      <{layout = #xegpu.layout<inst_data = [16, 16]>, transpose = array<i64: 1, 0>}>
+      : !xegpu.tensor_desc<32x32xf16, #xegpu.layout<inst_data = [16, 16]>> -> vector<32x32xf16>
+    gpu.return %load : vector<32x32xf16>
+  }
+}

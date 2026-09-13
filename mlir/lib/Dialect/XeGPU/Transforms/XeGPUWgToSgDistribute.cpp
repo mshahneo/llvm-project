@@ -226,9 +226,46 @@ struct WgToSgLoadNdOp : public OpConversionPattern<xegpu::LoadNdOp> {
   matchAndRewrite(xegpu::LoadNdOp op, OneToNOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
 
+    // `packed` reshapes the result, so the subgroup result type below would be
+    // wrong. Bail out instead of dropping the attribute and loading the wrong
+    // data.
+    if (op.getPacked())
+      return rewriter.notifyMatchFailure(
+          op, "packed load_nd is not supported by workgroup distribution");
+
+    // A `transpose` swaps the result dimensions. The op's own layout describes
+    // the *descriptor*, so the layout of the result is that layout permuted.
+    // The type converter derives the subgroup result type from the unpermuted
+    // layout, so only the cases where the permutation leaves the subgroup
+    // result unchanged can be handled here.
+    std::optional<ArrayRef<int64_t>> transpose = op.getTranspose();
+    if (transpose) {
+      ArrayRef<int64_t> tdescShape = op.getTensorDescType().getShape();
+      if (transpose->size() != tdescShape.size() ||
+          !isPermutationVector(*transpose))
+        return rewriter.notifyMatchFailure(op, "invalid transpose attribute");
+    }
+
     SmallVector<SmallVector<OpFoldResult>> offsetsList;
     if (failed(genOffsetsList(rewriter, op, offsetsList)))
       return failure();
+
+    if (transpose) {
+      // Round-robin assignment enumerates the tiles in descriptor order. The
+      // consumer enumerates them in permuted order, and the two orders only
+      // agree when there is a single tile per subgroup.
+      if (offsetsList.size() != 1)
+        return rewriter.notifyMatchFailure(
+            op, "transposed load_nd needs one tile per subgroup");
+      auto sgTdescTy = dyn_cast<xegpu::TensorDescType>(
+          adaptor.getTensorDesc().front().getType());
+      if (!sgTdescTy)
+        return failure();
+      if (applyPermutation(SmallVector<int64_t>(sgTdescTy.getShape()),
+                           *transpose) != ArrayRef<int64_t>(sgTdescTy.getShape()))
+        return rewriter.notifyMatchFailure(
+            op, "transposed load_nd needs a square subgroup tile");
+    }
 
     xegpu::DistributeLayoutAttr layout = op.getLayoutAttr();
     if (layout)
@@ -241,7 +278,7 @@ struct WgToSgLoadNdOp : public OpConversionPattern<xegpu::LoadNdOp> {
           VectorType::get(tdescTy.getShape(), tdescTy.getElementType());
       auto newOp = xegpu::LoadNdOp::create(
           rewriter, op.getLoc(), newResTy, tdesc, offsets,
-          /*packed = */ nullptr, /*transpose = */ nullptr, op.getL1HintAttr(),
+          /*packed = */ nullptr, op.getTransposeAttr(), op.getL1HintAttr(),
           op.getL2HintAttr(), op.getL3HintAttr(), layout);
       newOps.push_back(newOp);
     }

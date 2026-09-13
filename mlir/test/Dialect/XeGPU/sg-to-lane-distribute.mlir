@@ -560,3 +560,43 @@ gpu.module @xevm_module {
     gpu.return
   }
 }
+
+// -----
+// A transposed load already returns the data in packed (VNNI) register order,
+// and the hardware cannot do both, so `packed` must not be added on top of it.
+// CHECK-LABEL: gpu.func @load_nd_transpose_not_packed(
+// CHECK:         xegpu.load_nd %{{.*}}[%{{.*}}] <{transpose = array<i64: 1, 0>}>
+// CHECK-SAME:      !xegpu.tensor_desc<16x16xf16> -> vector<16xf16>
+gpu.module @xevm_module {
+  gpu.func @load_nd_transpose_not_packed(%arg0: memref<16x16xf16>) {
+    %c0 = arith.constant 0 : index
+    %0 = xegpu.create_nd_tdesc %arg0 : memref<16x16xf16>
+      -> !xegpu.tensor_desc<16x16xf16, #xegpu.layout<lane_layout = [1, 16], lane_data = [2, 1]>>
+    %1 = xegpu.load_nd %0[%c0, %c0]
+      <{layout = #xegpu.layout<lane_layout = [1, 16], lane_data = [2, 1]>, transpose = array<i64: 1, 0>}>
+      : !xegpu.tensor_desc<16x16xf16, #xegpu.layout<lane_layout = [1, 16], lane_data = [2, 1]>> -> vector<16x16xf16>
+    xegpu.store_nd %1, %0[%c0, %c0] <{layout = #xegpu.layout<lane_layout = [1, 16], lane_data = [2, 1]>}>
+      : vector<16x16xf16>, !xegpu.tensor_desc<16x16xf16, #xegpu.layout<lane_layout = [1, 16], lane_data = [2, 1]>>
+    gpu.return
+  }
+}
+
+// -----
+// Control for the case above: the same layout does ask for `packed` when the
+// load is not transposed.
+// CHECK-LABEL: gpu.func @load_nd_packed_no_transpose(
+// CHECK:         xegpu.load_nd %{{.*}}[%{{.*}}] <{packed}>
+// CHECK-SAME:      !xegpu.tensor_desc<16x16xf16> -> vector<16xf16>
+gpu.module @xevm_module {
+  gpu.func @load_nd_packed_no_transpose(%arg0: memref<16x16xf16>) {
+    %c0 = arith.constant 0 : index
+    %0 = xegpu.create_nd_tdesc %arg0 : memref<16x16xf16>
+      -> !xegpu.tensor_desc<16x16xf16, #xegpu.layout<lane_layout = [1, 16], lane_data = [2, 1]>>
+    %1 = xegpu.load_nd %0[%c0, %c0]
+      <{layout = #xegpu.layout<lane_layout = [1, 16], lane_data = [2, 1]>}>
+      : !xegpu.tensor_desc<16x16xf16, #xegpu.layout<lane_layout = [1, 16], lane_data = [2, 1]>> -> vector<16x16xf16>
+    xegpu.store_nd %1, %0[%c0, %c0] <{layout = #xegpu.layout<lane_layout = [1, 16], lane_data = [2, 1]>}>
+      : vector<16x16xf16>, !xegpu.tensor_desc<16x16xf16, #xegpu.layout<lane_layout = [1, 16], lane_data = [2, 1]>>
+    gpu.return
+  }
+}

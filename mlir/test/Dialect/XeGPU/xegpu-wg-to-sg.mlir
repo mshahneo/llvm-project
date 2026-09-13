@@ -1359,3 +1359,37 @@ gpu.module @test_slice_layout {
     gpu.return
   }
 }
+
+// -----
+// A transposed load_nd must keep its `transpose` attribute through workgroup
+// distribution. Dropping it feeds the consumer untransposed data with no
+// diagnostic, because a square tile keeps the result type unchanged.
+gpu.module @test_load_nd_transpose {
+  // CHECK-LABEL: load_nd_transpose
+  gpu.func @load_nd_transpose(%src: memref<128x128xf16>) {
+    // CHECK: %[[TDESC:.*]] = xegpu.create_nd_tdesc %{{.*}} : memref<128x128xf16> -> !xegpu.tensor_desc<64x64xf16>
+    // CHECK: xegpu.load_nd %[[TDESC]][{{.*}}] <{transpose = array<i64: 1, 0>}> : !xegpu.tensor_desc<64x64xf16> -> vector<64x64xf16>
+    %tdesc = xegpu.create_nd_tdesc %src : memref<128x128xf16>
+      -> !xegpu.tensor_desc<128x128xf16, #xegpu.layout<sg_layout = [2, 2], sg_data = [64, 64]>>
+    %load = xegpu.load_nd %tdesc[0, 0]
+      <{layout = #xegpu.layout<sg_layout = [2, 2], sg_data = [64, 64]>, transpose = array<i64: 1, 0>}>
+      : !xegpu.tensor_desc<128x128xf16, #xegpu.layout<sg_layout = [2, 2], sg_data = [64, 64]>> -> vector<128x128xf16>
+    gpu.return
+  }
+}
+
+// -----
+// The K-load shape from the flash-attention kernel: every subgroup reads the
+// whole tile, so the transpose must survive here too.
+gpu.module @test_load_nd_transpose_broadcast {
+  // CHECK-LABEL: load_nd_transpose_broadcast
+  gpu.func @load_nd_transpose_broadcast(%src: memref<64x64xf16>) {
+    // CHECK: xegpu.load_nd %{{.*}}[{{.*}}] <{layout = #xegpu.layout<inst_data = [16, 16]>, transpose = array<i64: 1, 0>}> : !xegpu.tensor_desc<64x64xf16, #xegpu.layout<inst_data = [16, 16]>> -> vector<64x64xf16>
+    %tdesc = xegpu.create_nd_tdesc %src : memref<64x64xf16>
+      -> !xegpu.tensor_desc<64x64xf16, #xegpu.layout<sg_layout = [8, 1], sg_data = [64, 64], inst_data = [16, 16]>>
+    %load = xegpu.load_nd %tdesc[0, 0]
+      <{layout = #xegpu.layout<sg_layout = [8, 1], sg_data = [64, 64], inst_data = [16, 16]>, transpose = array<i64: 1, 0>}>
+      : !xegpu.tensor_desc<64x64xf16, #xegpu.layout<sg_layout = [8, 1], sg_data = [64, 64], inst_data = [16, 16]>> -> vector<64x64xf16>
+    gpu.return
+  }
+}
