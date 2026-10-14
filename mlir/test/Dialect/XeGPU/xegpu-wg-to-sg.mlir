@@ -1435,3 +1435,48 @@ gpu.module @test_slice_layout {
     gpu.return
   }
 }
+
+// -----
+
+// The fast-math flags are kept on the distributed reductions and on the
+// combine with the accumulator.
+gpu.module @test_distribution_fastmath {
+  // CHECK-LABEL: @vector_reduce_fastmath
+  // CHECK: %[[RED:.*]] = vector.multi_reduction <maximumf>, {{.*}}, {{.*}} fastmath<nnan,nsz> [1] : vector<16x64xf32> to vector<16xf32>
+  // CHECK: arith.maximumf %[[RED]], {{.*}} fastmath<nnan,nsz> : vector<16xf32>
+  gpu.func @vector_reduce_fastmath(%src: memref<256x64xf32>) {
+    %cst = arith.constant dense<1.0> : vector<256xf32>
+    %tdesc = xegpu.create_nd_tdesc %src : memref<256x64xf32>
+      -> !xegpu.tensor_desc<256x64xf32>
+    %load =  xegpu.load_nd %tdesc[0, 0] <{layout = #xegpu.layout<sg_layout = [16, 1], sg_data = [16, 64]>}>
+      : !xegpu.tensor_desc<256x64xf32>
+      -> vector<256x64xf32>
+    %reduce = vector.multi_reduction <maximumf>, %load, %cst fastmath<nnan,nsz> [1]
+      : vector<256x64xf32> to vector<256xf32>
+    %anchor = xegpu.convert_layout %reduce
+      <{target_layout = #xegpu.slice<#xegpu.layout<sg_layout = [16, 1], sg_data = [16, 64]>, dims = [1]>}>
+      : vector<256xf32>
+    gpu.return
+  }
+
+  // CHECK-LABEL: gpu.func @vector_reduce_cross_sg_fastmath
+  // CHECK: vector.multi_reduction <maximumf>, {{.*}}, {{.*}} fastmath<nnan,nsz> [0, 1] : vector<8x8xf32> to f32
+  // CHECK: gpu.barrier
+  // CHECK: %[[FINAL:.*]] = vector.multi_reduction <maximumf>, {{.*}}, {{.*}} fastmath<nnan,nsz> [0, 1] : vector<4x4xf32> to f32
+  // CHECK: arith.maximumf %[[FINAL]], {{.*}} fastmath<nnan,nsz> : f32
+  gpu.func @vector_reduce_cross_sg_fastmath(%src: memref<32x32xf32>) {
+    %cst = arith.constant 0.0 : f32
+    %tdesc = xegpu.create_nd_tdesc %src : memref<32x32xf32>
+      -> !xegpu.tensor_desc<32x32xf32>
+    %load = xegpu.load_nd %tdesc[0, 0] <{layout = #xegpu.layout<sg_layout = [4, 4], sg_data = [8, 8]>}>
+      : !xegpu.tensor_desc<32x32xf32>
+      -> vector<32x32xf32>
+    %reduce = vector.multi_reduction <maximumf>, %load, %cst fastmath<nnan,nsz> [0, 1]
+      : vector<32x32xf32> to f32
+    %anchor = xegpu.convert_layout %reduce
+        <{
+          target_layout = #xegpu.slice<#xegpu.layout<sg_layout = [4, 4], sg_data = [8, 8]>, dims = [0, 1]>
+        }> : f32
+    gpu.return
+  }
+}

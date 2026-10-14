@@ -530,14 +530,15 @@ class MultiRed2dOpPattern
 
     Value intraLaneReduced = vector::MultiDimReductionOp::create(
         rewriter, loc, reductionOp.getKind(), reductionOp.getSource(),
-        constNeutralVal, ArrayRef<int64_t>(intraLaneDim));
+        constNeutralVal, ArrayRef<int64_t>(intraLaneDim),
+        reductionOp.getFastmath());
 
     // Adjust crossLaneDim after the first reduction.
     if (crossLaneDim > intraLaneDim)
       crossLaneDim -= 1;
     Value crossLaneReduced = vector::MultiDimReductionOp::create(
         rewriter, loc, reductionOp.getKind(), intraLaneReduced, acc,
-        ArrayRef<int64_t>(crossLaneDim));
+        ArrayRef<int64_t>(crossLaneDim), reductionOp.getFastmath());
     assert(crossLaneReduced.getType() == reductionOp.getResult().getType() &&
            "Type mismatch");
 

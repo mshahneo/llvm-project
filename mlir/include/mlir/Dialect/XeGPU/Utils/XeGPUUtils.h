@@ -133,8 +133,10 @@ SmallVector<OpFoldResult> addWithRightAligned(OpBuilder &builder, Location loc,
 /// lanes given by `size`). This uses butterfly shuffles to perform the
 /// reduction in a log2(size) number of steps.
 /// NOTE: Implementation taken from TestVectorTransforms.cpp
+/// `fastmath` is set on every combining operation.
 Value subgroupReduction(Location loc, OpBuilder &builder, Value input,
-                        vector::CombiningKind kind, uint32_t size);
+                        vector::CombiningKind kind, uint32_t size,
+                        arith::FastMathFlagsAttr fastmath = nullptr);
 
 /// Given a `src` and an `acc` argumments from a vector::MultiDimReductionOp,
 /// lower to a set of vector::ReductionOp ops over 1D slices extracted from
@@ -144,7 +146,8 @@ Value subgroupReduction(Location loc, OpBuilder &builder, Value input,
 Value lowerToVectorReductions(TypedValue<VectorType> src,
                               TypedValue<VectorType> acc,
                               vector::CombiningKind kind, int64_t reductionDim,
-                              Location loc, PatternRewriter &rewriter);
+                              Location loc, PatternRewriter &rewriter,
+                              arith::FastMathFlagsAttr fastmath = nullptr);
 
 /// Creates a constant filled with the neutral (identity) value for the
 /// given reduction kind. For example: 0 for ADD/OR/XOR, 1 for MUL/AND,
@@ -164,7 +167,9 @@ Value lowerCrossLaneReductionToShuffles(TypedValue<VectorType> src,
                                         vector::CombiningKind kind,
                                         int64_t reductionDim,
                                         int64_t reductionSize, Location loc,
-                                        PatternRewriter &rewriter);
+                                        PatternRewriter &rewriter,
+                                        arith::FastMathFlagsAttr fastmath =
+                                            nullptr);
 
 /// Helper Function to find a proper instruction multiple for the user-supplied
 /// sg-level data shape (diven by `dim`). `candidates` are uArch allowed shapes.

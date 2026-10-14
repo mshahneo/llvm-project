@@ -565,17 +565,25 @@ int xegpu::getLargestDivisor(T dim, ArrayRef<T> candidates,
   return largest;
 }
 
+/// Returns the flags held by `fastmath`, or none if it is null.
+static arith::FastMathFlags getFlags(arith::FastMathFlagsAttr fastmath) {
+  return fastmath ? fastmath.getValue() : arith::FastMathFlags::none;
+}
+
 Value xegpu::subgroupReduction(Location loc, OpBuilder &builder, Value input,
-                               vector::CombiningKind kind, uint32_t size) {
+                               vector::CombiningKind kind, uint32_t size,
+                               arith::FastMathFlagsAttr fastmath) {
   // First reduce on a single thread to get per lane reduction value.
-  Value laneVal = vector::ReductionOp::create(builder, loc, kind, input);
+  Value laneVal = vector::ReductionOp::create(builder, loc, kind, input,
+                                              getFlags(fastmath));
   // Parallel reduction using butterfly shuffles.
   for (uint64_t i = 1; i < size; i <<= 1) {
     Value shuffled =
         gpu::ShuffleOp::create(builder, loc, laneVal, i, /**  width = **/ size,
                                /**  mode = **/ gpu::ShuffleMode::XOR)
             .getShuffleResult();
-    laneVal = makeArithReduction(builder, loc, kind, laneVal, shuffled);
+    laneVal =
+        makeArithReduction(builder, loc, kind, laneVal, shuffled, fastmath);
   }
   return laneVal;
 }
@@ -584,7 +592,8 @@ Value xegpu::lowerToVectorReductions(TypedValue<VectorType> src,
                                      TypedValue<VectorType> acc,
                                      vector::CombiningKind kind,
                                      int64_t reductionDim, Location loc,
-                                     PatternRewriter &rewriter) {
+                                     PatternRewriter &rewriter,
+                                     arith::FastMathFlagsAttr fastmath) {
   VectorType sourceType = src.getType();
   int64_t sourceRank = sourceType.getRank();
   // Expecting at least a 2D source vector. Leading dimensions (all except the
@@ -647,8 +656,9 @@ Value xegpu::lowerToVectorReductions(TypedValue<VectorType> src,
     SmallVector<int64_t> accIdx(accRank, 0);
     accIdx[accRank - 1] = i;
     Value accExtract = vector::ExtractOp::create(rewriter, loc, acc, accIdx);
-    Value reduction = vector::ReductionOp::create(
-        rewriter, loc, kind, slice.getResult(), accExtract);
+    Value reduction =
+        vector::ReductionOp::create(rewriter, loc, kind, slice.getResult(),
+                                    accExtract, getFlags(fastmath));
     reductionResult = vector::InsertOp::create(rewriter, loc, reduction,
                                                reductionResult, accIdx);
     // Insert op should have the same layout as the accumulator.
@@ -660,7 +670,8 @@ Value xegpu::lowerToVectorReductions(TypedValue<VectorType> src,
 Value xegpu::lowerCrossLaneReductionToShuffles(
     TypedValue<VectorType> src, TypedValue<VectorType> acc,
     vector::CombiningKind kind, int64_t reductionDim, int64_t reductionSize,
-    Location loc, PatternRewriter &rewriter) {
+    Location loc, PatternRewriter &rewriter,
+    arith::FastMathFlagsAttr fastmath) {
   VectorType sourceType = src.getType();
   int64_t sourceRank = sourceType.getRank();
   // Expecting at least a 2D source vector. Leading dimensions (all except the
@@ -715,10 +726,10 @@ Value xegpu::lowerCrossLaneReductionToShuffles(
     SmallVector<int64_t> accIdx(accRank, 0);
     accIdx[accRank - 1] = i;
     Value accExtract = vector::ExtractOp::create(rewriter, loc, acc, accIdx);
-    Value fullReduce =
-        xegpu::subgroupReduction(loc, rewriter, slice, kind, reductionSize);
-    fullReduce =
-        vector::makeArithReduction(rewriter, loc, kind, fullReduce, accExtract);
+    Value fullReduce = xegpu::subgroupReduction(loc, rewriter, slice, kind,
+                                                reductionSize, fastmath);
+    fullReduce = vector::makeArithReduction(rewriter, loc, kind, fullReduce,
+                                            accExtract, fastmath);
     reductionResult = vector::InsertOp::create(rewriter, loc, fullReduce,
                                                reductionResult, accIdx);
   }
