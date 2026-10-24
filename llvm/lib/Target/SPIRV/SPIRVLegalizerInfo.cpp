@@ -399,17 +399,33 @@ SPIRVLegalizerInfo::SPIRVLegalizerInfo(const SPIRVSubtarget &ST) {
   getActionDefinitionsBuilder({G_FLDEXP, G_STRICT_FLDEXP})
       .legalForCartesianProduct(allFloatScalarsAndVectors, allIntScalars);
 
+  // FP <-> integer conversions take vectors of any width, like the integer
+  // casts below: legal as long vectors with SPV_EXT_long_vector, else split.
   getActionDefinitionsBuilder({G_FPTOSI, G_FPTOUI})
       .legalForCartesianProduct(allIntScalarsAndVectors,
-                                allFloatScalarsAndVectors);
+                                allFloatScalarsAndVectors)
+      .legalIf(typeOfLongVectors(0, IsLongVecs))
+      .moreElementsToNextPow2(0)
+      .fewerElementsIf(vectorElementCountIsGreaterThan(0, MaxVectorSize),
+                       LegalizeMutations::changeElementCountTo(
+                           0, ElementCount::getFixed(MaxVectorSize)));
 
   getActionDefinitionsBuilder({G_FPTOSI_SAT, G_FPTOUI_SAT})
       .legalForCartesianProduct(allIntScalarsAndVectors,
-                                allFloatScalarsAndVectors);
+                                allFloatScalarsAndVectors)
+      .legalIf(typeOfLongVectors(0, IsLongVecs))
+      .moreElementsToNextPow2(0)
+      .fewerElementsIf(vectorElementCountIsGreaterThan(0, MaxVectorSize),
+                       LegalizeMutations::changeElementCountTo(
+                           0, ElementCount::getFixed(MaxVectorSize)));
 
   getActionDefinitionsBuilder({G_SITOFP, G_UITOFP})
-      .legalForCartesianProduct(allFloatScalarsAndVectors,
-                                allScalarsAndVectors);
+      .legalForCartesianProduct(allFloatScalarsAndVectors, allScalarsAndVectors)
+      .legalIf(typeOfLongVectors(0, IsLongVecs))
+      .moreElementsToNextPow2(0)
+      .fewerElementsIf(vectorElementCountIsGreaterThan(0, MaxVectorSize),
+                       LegalizeMutations::changeElementCountTo(
+                           0, ElementCount::getFixed(MaxVectorSize)));
 
   getActionDefinitionsBuilder(G_CTPOP)
       .legalForCartesianProduct(allIntScalarsAndVectors)
@@ -559,9 +575,14 @@ SPIRVLegalizerInfo::SPIRVLegalizerInfo(const SPIRVSubtarget &ST) {
       .legalForCartesianProduct(allIntScalarsAndVectors,
                                 allFloatScalarsAndVectors);
 
-  // FP conversions.
+  // FP conversions. Same width handling as the integer casts.
   getActionDefinitionsBuilder({G_FPTRUNC, G_FPEXT})
-      .legalForCartesianProduct(allFloatScalarsAndVectors);
+      .legalForCartesianProduct(allFloatScalarsAndVectors)
+      .legalIf(typeOfLongVectors(0, IsLongVecs))
+      .moreElementsToNextPow2(0)
+      .fewerElementsIf(vectorElementCountIsGreaterThan(0, MaxVectorSize),
+                       LegalizeMutations::changeElementCountTo(
+                           0, ElementCount::getFixed(MaxVectorSize)));
 
   // Pointer-handling.
   getActionDefinitionsBuilder(G_FRAME_INDEX).legalFor({p0});
